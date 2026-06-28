@@ -1,7 +1,9 @@
 // /api/me/sidebar-counts — Dynamic badge counts for the sidebar
 // Replaces hardcoded badges (WhatsApp Inbox=3, Campaigns=12, Approvals=3)
+// Uses a SINGLE raw SQL query to avoid exhausting the Prisma connection pool
+// in serverless (4 parallel Prisma.count() calls × multiple page renders = timeout).
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -13,17 +15,20 @@ export async function GET() {
   }
   const businessId = (session as any).businessId
 
-  const [inbox, campaigns, approvals, failures] = await Promise.all([
-    prisma.conversation.count({ where: { businessId, unreadCount: { gt: 0 } } }),
-    prisma.campaign.count({ where: { businessId, status: { in: ['draft', 'scheduled'] } } }),
-    prisma.approval.count({ where: { businessId, status: 'pending' } }),
-    prisma.failedMessage.count({ where: { businessId, status: 'pending' } }),
-  ])
+  // Single query, multiple sub-aggregates. One connection, not four.
+  const rows = await prisma.$queryRaw<{ inbox: bigint; campaigns: bigint; approvals: bigint; failures: bigint }[]>`
+    SELECT
+      (SELECT COUNT(*)::int FROM "Conversation" WHERE "businessId" = ${businessId} AND "unreadCount" > 0) AS inbox,
+      (SELECT COUNT(*)::int FROM "Campaign"    WHERE "businessId" = ${businessId} AND "status" IN ('draft','scheduled')) AS campaigns,
+      (SELECT COUNT(*)::int FROM "Approval"    WHERE "businessId" = ${businessId} AND "status" = 'pending') AS approvals,
+      (SELECT COUNT(*)::int FROM "FailedMessage" WHERE "businessId" = ${businessId} AND "status" = 'pending') AS failures
+  `
 
+  const row = rows[0] || { inbox: 0n, campaigns: 0n, approvals: 0n, failures: 0n }
   return NextResponse.json({
-    inbox,
-    campaigns,
-    approvals,
-    failures,
+    inbox: Number(row.inbox) || 0,
+    campaigns: Number(row.campaigns) || 0,
+    approvals: Number(row.approvals) || 0,
+    failures: Number(row.failures) || 0,
   })
 }

@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
-import { Save, Star, Gift, Calendar, TrendingUp, AlertTriangle, MessageCircle, CheckCircle2, XCircle, Loader2, Download, Trash2, Mail, Bell, Globe, Lock, ArrowUpRight, FileText } from 'lucide-react'
+import { Save, Star, Gift, Calendar, TrendingUp, AlertTriangle, MessageCircle, CheckCircle2, XCircle, Loader2, Download, Trash2, Mail, Bell, Globe, Lock, ArrowUpRight, FileText, Shield } from 'lucide-react'
 import { IntegrationsCard } from '@/components/integrations-card'
+import { TwoFactorSetupModal } from './two-factor-setup-modal'
 
 interface BusinessData {
   id: string
@@ -80,6 +81,8 @@ export function SettingsClient({ business }: { business: BusinessData }) {
     google_calendar: !!business.googleCalendarId,
     razorpay: !!business.razorpayCustomerId,
   })
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(business.twoFactorEnabled)
+  const [twoFactorSetupOpen, setTwoFactorSetupOpen] = useState(false)
 
   const save = async (section: string) => {
     setSaving(section)
@@ -307,42 +310,33 @@ export function SettingsClient({ business }: { business: BusinessData }) {
           </div>
           <div className="flex items-center justify-between p-3 border border-ink-100 rounded-lg">
             <div>
-              <div className="text-sm font-medium text-ink-900">Two-factor authentication</div>
+              <div className="text-sm font-medium text-ink-900 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-teal-600" />
+                Two-factor authentication
+              </div>
               <div className="text-xs text-ink-500">
-                {business.twoFactorEnabled ? 'Enabled — using authenticator app' : 'Not enabled — add an extra layer of security'}
+                {twoFactorEnabled ? '✅ Enabled — using authenticator app' : 'Not enabled — add an extra layer of security'}
               </div>
             </div>
             <Button
               size="sm"
-              variant={business.twoFactorEnabled ? 'outline' : 'brand'}
+              variant={twoFactorEnabled ? 'outline' : 'brand'}
               onClick={async () => {
-                if (business.twoFactorEnabled) {
-                  if (!confirm('Disable 2FA?')) return
-                  await fetch('/api/settings/2fa', { method: 'DELETE' })
-                  toast({ title: '2FA disabled', variant: 'success' })
-                } else {
-                  const res = await fetch('/api/settings/2fa', { method: 'POST' })
-                  const data = await res.json()
-                  if (data.qrCode) {
-                    const code = prompt('Scan the QR code in your authenticator app, then enter the 6-digit code shown:')
-                    if (code) {
-                      const confirm = await fetch('/api/settings/2fa/confirm', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ code }),
-                      })
-                      if (confirm.ok) {
-                        toast({ title: '2FA enabled!', variant: 'success' })
-                        setTimeout(() => window.location.reload(), 1000)
-                      } else {
-                        toast({ title: 'Invalid code. Try again.', variant: 'error' })
-                      }
-                    }
+                if (twoFactorEnabled) {
+                  if (!confirm('Disable 2FA? You will only need your password to log in.')) return
+                  const res = await fetch('/api/settings/2fa', { method: 'DELETE' })
+                  if (res.ok) {
+                    setTwoFactorEnabled(false)
+                    toast({ title: '2FA disabled', variant: 'success' })
+                  } else {
+                    toast({ title: 'Could not disable 2FA', variant: 'error' })
                   }
+                } else {
+                  setTwoFactorSetupOpen(true)
                 }
               }}
             >
-              {business.twoFactorEnabled ? 'Disable' : 'Enable'}
+              {twoFactorEnabled ? 'Disable' : 'Enable'}
             </Button>
           </div>
         </CardContent>
@@ -502,6 +496,19 @@ export function SettingsClient({ business }: { business: BusinessData }) {
 
       {/* Tax & Billing Details (editable — replaces hardcoded GST in Billing page) */}
       <TaxSettingsCard />
+
+      {/* 2FA setup modal (real TOTP — replaces the old prompt() stub) */}
+      {twoFactorSetupOpen && (
+        <TwoFactorSetupModal
+          onClose={() => setTwoFactorSetupOpen(false)}
+          onSuccess={() => {
+            setTwoFactorEnabled(true)
+            setTwoFactorSetupOpen(false)
+            // Refresh to pick up the new state from the server
+            setTimeout(() => window.location.reload(), 800)
+          }}
+        />
+      )}
     </>
   )
 }
