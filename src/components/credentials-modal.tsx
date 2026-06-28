@@ -1,0 +1,358 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { useToast } from '@/components/ui/toast'
+import { X, Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, ExternalLink, Save } from 'lucide-react'
+import { getChannelSchema } from '@/lib/channel-schemas'
+
+interface ChannelData {
+  channel: string
+  label: string
+  icon: string
+  description: string
+  providers?: { value: string; label: string }[]
+  fields: { key: string; label: string; type: string; required: boolean; placeholder?: string; helpText?: string }[]
+  testInstructions?: string
+  connected: boolean
+  provider?: string | null
+  config: Record<string, any>
+  hasCredentials: boolean
+  lastTestStatus?: string
+  lastTestError?: string
+}
+
+export function CredentialsModal({
+  channel,
+  onClose,
+  onSaved,
+}: {
+  channel: ChannelData
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { toast } = useToast()
+  const [provider, setProvider] = useState(channel.provider || channel.providers?.[0]?.value || '')
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+
+  useEffect(() => {
+    // Load existing values (masked) for display
+    loadExisting()
+  }, [])
+
+  const loadExisting = async () => {
+    try {
+      const res = await fetch(`/api/channels/${channel.channel}`)
+      const data = await res.json()
+      if (data.values) {
+        setValues(data.values)
+      }
+    } catch (err) {
+      // Ignore
+    }
+  }
+
+  const save = async (skipTest = false) => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/channels/${channel.channel}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: provider || undefined,
+          values,
+          skipTest,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        if (data.testFailed) {
+          setTestResult({ ok: false, error: data.details || data.error })
+        } else {
+          throw new Error(data.error || 'Save failed')
+        }
+        return
+      }
+      toast({ title: `${channel.label} connected!`, variant: 'success' })
+      onSaved()
+      onClose()
+    } catch (err: any) {
+      toast({ title: 'Save failed', description: err.message, variant: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const test = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await fetch(`/api/channels/${channel.channel}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: provider || undefined,
+          values,
+          skipTest: false,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setTestResult({ ok: true })
+        toast({ title: 'Connection test passed', variant: 'success' })
+      } else {
+        setTestResult({ ok: false, error: data.details || data.error })
+      }
+    } catch (err: any) {
+      setTestResult({ ok: false, error: err.message })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6 border-b border-ink-100 sticky top-0 bg-white z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl">{channel.icon}</div>
+              <div>
+                <h2 className="text-xl font-bold text-ink-900">Connect {channel.label}</h2>
+                <p className="text-sm text-ink-500 mt-0.5">{channel.description}</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Provider selector */}
+          {channel.providers && channel.providers.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-ink-600 mb-1.5 block">Provider</label>
+              <select
+                className="w-full h-10 rounded-lg border border-ink-200 px-3 text-sm bg-white"
+                value={provider}
+                onChange={(e) => setProvider(e.target.value)}
+              >
+                {channel.providers.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Dynamic fields */}
+          {channel.fields.map((field) => {
+            const currentValue = values[field.key] || ''
+            const isMasked = currentValue.startsWith('•')
+            const isSecret = field.type === 'password'
+            const show = showSecrets[field.key]
+
+            return (
+              <div key={field.key}>
+                <label className="text-xs font-medium text-ink-600 mb-1.5 block">
+                  {field.label}
+                  {field.required && <span className="text-red-500 ml-1">*</span>}
+                </label>
+                <div className="relative">
+                  <Input
+                    type={isSecret && !show ? 'password' : 'text'}
+                    value={currentValue}
+                    onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
+                    placeholder={field.placeholder || (isMasked ? '••••••••' : '')}
+                    className={isSecret ? 'pr-20' : ''}
+                  />
+                  {isSecret && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowSecrets({ ...showSecrets, [field.key]: !show })}
+                        className="p-1 hover:bg-ink-100 rounded"
+                      >
+                        {show ? <EyeOff className="w-4 h-4 text-ink-500" /> : <Eye className="w-4 h-4 text-ink-500" />}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {field.helpText && (
+                  <p className="text-xs text-ink-500 mt-1">{field.helpText}</p>
+                )}
+                {isMasked && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    ⚠️ Saved value is hidden. Leave as is to keep it, or type new value to replace.
+                  </p>
+                )}
+              </div>
+            )
+          })}
+
+          {/* Test instructions */}
+          {channel.testInstructions && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
+              <strong>Setup:</strong> {channel.testInstructions}
+            </div>
+          )}
+
+          {/* Test result */}
+          {testResult && (
+            <div className={`p-3 rounded-lg flex items-start gap-2 ${
+              testResult.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+            }`}>
+              {testResult.ok ? (
+                <>
+                  <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-green-900">Connection test passed</div>
+                    <div className="text-sm text-green-800">Your credentials are valid.</div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-red-900">Test failed</div>
+                    <div className="text-sm text-red-800">{testResult.error}</div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Where to get credentials */}
+          <CredentialsHelp channel={channel.channel} />
+        </div>
+
+        <div className="p-4 border-t border-ink-100 flex justify-between gap-2 sticky bottom-0 bg-white">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={test} disabled={testing || saving}>
+              {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              {testing ? 'Testing...' : 'Test connection'}
+            </Button>
+            <Button variant="brand" onClick={() => save(true)} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? 'Saving...' : channel.connected ? 'Update' : 'Connect'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CredentialsHelp({ channel }: { channel: string }) {
+  const links: Record<string, { label: string; url: string; steps: string[] }> = {
+    whatsapp: {
+      label: 'Meta for Developers',
+      url: 'https://developers.facebook.com/apps/',
+      steps: [
+        '1. Create a Meta App → Type: "Business"',
+        '2. Add "WhatsApp" product',
+        '3. Copy Phone Number ID from WhatsApp → API Setup',
+        '4. Generate a permanent System User Access Token',
+        '5. Set webhook to: <code>https://yourdomain.com/api/whatsapp/webhook</code>',
+      ],
+    },
+    voice: {
+      label: 'Twilio Console',
+      url: 'https://console.twilio.com/',
+      steps: [
+        '1. Sign up at twilio.com',
+        '2. Get a phone number with Voice capability',
+        '3. Find Account SID and Auth Token on the dashboard',
+        '4. Configure voice webhook in Phone Numbers → Configuration',
+      ],
+    },
+    instagram: {
+      label: 'Facebook Graph API',
+      url: 'https://developers.facebook.com/tools/explorer/',
+      steps: [
+        '1. Create a Facebook App with Instagram Basic Display',
+        '2. Connect your Instagram Business account',
+        '3. Generate a long-lived access token (60 days)',
+        '4. Required scopes: instagram_basic, instagram_content_publish, pages_show_list',
+      ],
+    },
+    google_ads: {
+      label: 'Google Ads API Center',
+      url: 'https://ads.google.com/aw/apicenter',
+      steps: [
+        '1. Apply for API access (takes 24-48h)',
+        '2. Create OAuth credentials in Google Cloud Console',
+        '3. Generate refresh token via OAuth flow',
+        '4. Find Customer ID in Google Ads UI (top right)',
+      ],
+    },
+    google_calendar: {
+      label: 'Google Cloud Console',
+      url: 'https://console.cloud.google.com/apis/credentials',
+      steps: [
+        '1. Enable Google Calendar API',
+        '2. Create OAuth 2.0 credentials',
+        '3. Generate refresh token via OAuth playground',
+        '4. Calendar ID defaults to "primary"',
+      ],
+    },
+    razorpay: {
+      label: 'Razorpay Dashboard',
+      url: 'https://dashboard.razorpay.com/app/keys',
+      steps: [
+        '1. Sign up at razorpay.com',
+        '2. Go to Settings → API Keys',
+        '3. Generate Live/Test keys',
+        '4. Set up webhook in Settings → Webhooks',
+      ],
+    },
+    openai: {
+      label: 'OpenAI Dashboard',
+      url: 'https://platform.openai.com/api-keys',
+      steps: [
+        '1. Sign up at platform.openai.com',
+        '2. Add payment method (min $5)',
+        '3. Create API key',
+        '4. Free tier: skip this and use platform key',
+      ],
+    },
+    google_ai: {
+      label: 'Google AI Studio',
+      url: 'https://aistudio.google.com/app/apikey',
+      steps: [
+        '1. Free tier available (no credit card)',
+        '2. Click "Get API key"',
+        '3. Copy the key',
+        '4. Free: 15 RPM, 1500 RPD',
+      ],
+    },
+  }
+
+  const help = links[channel]
+  if (!help) return null
+
+  return (
+    <details className="text-sm">
+      <summary className="cursor-pointer text-teal-600 font-medium flex items-center gap-1">
+        <ExternalLink className="w-3 h-3" />
+        Where do I get these credentials?
+      </summary>
+      <div className="mt-2 p-3 bg-ink-50 rounded-lg space-y-1">
+        <a href={help.url} target="_blank" rel="noopener noreferrer" className="text-teal-600 underline block">
+          Open {help.label} →
+        </a>
+        <ol className="mt-2 space-y-1 text-ink-700">
+          {help.steps.map((step, i) => (
+            <li key={i} className="text-xs" dangerouslySetInnerHTML={{ __html: step }} />
+          ))}
+        </ol>
+      </div>
+    </details>
+  )
+}

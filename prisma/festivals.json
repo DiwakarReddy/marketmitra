@@ -1,0 +1,20 @@
+[
+  { "name": "Diwali", "hindiName": "दीवाली", "date": "2026-11-08", "type": "hindu", "description": "Festival of lights", "greeting": "दीवाली की हार्दिक शुभकामनाएं", "leadDays": 3 },
+  { "name": "Holi", "hindiName": "होली", "date": "2026-03-04", "type": "hindu", "description": "Festival of colors", "greeting": "होली की शुभकामनाएं", "leadDays": 3 },
+  { "name": "Eid ul-Fitr", "hindiName": "ईद", "date": "2026-03-20", "type": "muslim", "description": "End of Ramadan", "greeting": "ईद मुबारक", "leadDays": 3 },
+  { "name": "Eid ul-Adha", "hindiName": "बकरीद", "date": "2026-05-27", "type": "muslim", "description": "Festival of sacrifice", "greeting": "बकरीद मुबारक", "leadDays": 3 },
+  { "name": "Raksha Bandhan", "hindiName": "रक्षाबंधन", "date": "2026-08-28", "type": "hindu", "description": "Sibling bond festival", "greeting": "रक्षाबंधन की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Independence Day", "hindiName": "स्वतंत्रता दिवस", "date": "2026-08-15", "type": "national", "description": "India's independence", "greeting": "स्वतंत्रता दिवस की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Republic Day", "hindiName": "गणतंत्र दिवस", "date": "2026-01-26", "type": "national", "description": "Constitution day", "greeting": "गणतंत्र दिवस की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Ganesh Chaturthi", "hindiName": "गणेश चतुर्थी", "date": "2026-08-27", "type": "hindu", "description": "Lord Ganesha festival", "greeting": "गणेश चतुर्थी की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Navratri", "hindiName": "नवरात्रि", "date": "2026-10-19", "type": "hindu", "description": "Nine nights", "greeting": "नवरात्रि की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Dussehra", "hindiName": "दशहरा", "date": "2026-10-28", "type": "hindu", "description": "Triumph of good", "greeting": "दशहरा की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Christmas", "hindiName": "क्रिसमस", "date": "2026-12-25", "type": "secular", "description": "Christmas Day", "greeting": "मेरी क्रिसमस", "leadDays": 3 },
+  { "name": "New Year", "hindiName": "नव वर्ष", "date": "2026-01-01", "type": "secular", "description": "New Year's Day", "greeting": "नव वर्ष की शुभकामनाएं", "leadDays": 5 },
+  { "name": "Karva Chauth", "hindiName": "करवा चौथ", "date": "2026-11-15", "type": "hindu", "description": "Married women's fast", "greeting": "करवा चौथ की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Makar Sankranti", "hindiName": "मकर संक्रांति", "date": "2026-01-14", "type": "hindu", "description": "Harvest festival", "greeting": "मकर संक्रांति की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Valentine's Day", "hindiName": "वैलेंटाइन डे", "date": "2026-02-14", "type": "secular", "description": "Day of love", "greeting": "वैलेंटाइन डे की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Mother's Day", "hindiName": "मदर्स डे", "date": "2026-05-10", "type": "secular", "description": "Mother's Day", "greeting": "माँ दिवस की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Father's Day", "hindiName": "फादर्स डे", "date": "2026-06-21", "type": "secular", "description": "Father's Day", "greeting": "पिता दिवस की शुभकामनाएं", "leadDays": 2 },
+  { "name": "Dhanteras", "hindiName": "धनतेरस", "date": "2026-11-05", "type": "hindu", "description": "Pre-Diwali shopping", "greeting": "धनतेरस की शुभकामनाएं", "leadDays": 1 }
+]

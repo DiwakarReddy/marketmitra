@@ -1,0 +1,54 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+
+  "regions": ["bom1"],
+
+  "crons": [
+    {
+      "path": "/api/cron/daily",
+      "schedule": "30 20 * * *"
+    },
+    {
+      "path": "/api/cron/key-rotation",
+      "schedule": "0 9 * * 1"
+    }
+  ],
+
+  "functions": {
+    "src/app/api/webhook/[businessId]/whatsapp/route.ts": {
+      "maxDuration": 10,
+      "memory": 512
+    },
+    "src/app/api/whatsapp/webhook/route.ts": {
+      "maxDuration": 10,
+      "memory": 512
+    },
+    "src/app/api/ai/generate/route.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "src/app/api/cron/daily/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/cron/key-rotation/route.ts": {
+      "maxDuration": 30,
+      "memory": 512
+    }
+  },
+
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-DNS-Prefetch-Control", "value": "on" },
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    }
+  ]
+}
