@@ -1,47 +1,93 @@
 // Prisma client setup
-// - In serverless (Vercel + Neon), uses Neon adapter for HTTP/WebSocket pooling
-// - In long-running Node (local dev with Postgres/SQLite), uses default Prisma client
+
+// - Standard Prisma client by default (works with Vercel Postgres, Supabase, Railway, Neon pooled, etc.)
+
+// - Neon serverless adapter ONLY when explicitly opted in via USE_NEON_ADAPTER=true
+
 //
-// Why: Neon serverless driver uses HTTP+WebSocket and avoids the
-// connection-per-invocation problem that crashes serverless functions when
-// Postgres connections exceed pool limits.
+
+// Why: Vercel Postgres URLs end in .neon.tech but we want standard Prisma for those
+
+// (the Neon adapter is for Edge runtime / advanced use cases).
+
 
 import { PrismaClient } from '@prisma/client'
 
+
 const globalForPrisma = global as unknown as { prisma: PrismaClient | undefined }
 
+
 function createPrismaClient(): PrismaClient {
+
   const dbUrl = process.env.DATABASE_URL || ''
-  const isNeon = dbUrl.includes('neon.tech') ||
-                 dbUrl.includes('neondatabase') ||
-                 process.env.USE_NEON_ADAPTER === 'true'
 
-  if (isNeon && process.env.NODE_ENV === 'production') {
-    // Use Neon serverless driver — works in Vercel serverless
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { PrismaNeon } = require('@prisma/adapter-neon')
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { Pool, neonConfig } = require('@neondatabase/serverless')
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const ws = require('ws')
-    neonConfig.webSocketConstructor = ws
 
-    const pool = new Pool({ connectionString: dbUrl })
-    const adapter = new PrismaNeon(pool)
-    return new PrismaClient({
-      adapter,
-      log: ['error'],
-    })
+  // Neon adapter is opt-in only — set USE_NEON_ADAPTER=true to enable
+
+  // (Required for Edge runtime; not needed for Node runtime with pooled URL)
+
+  const useNeonAdapter = process.env.USE_NEON_ADAPTER === 'true' ||
+
+    process.env.USE_NEON_ADAPTER === '1'
+
+
+  if (useNeonAdapter && process.env.NODE_ENV === 'production') {
+
+    try {
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+
+      const { PrismaNeon } = require('@prisma/adapter-neon')
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+
+      const { Pool, neonConfig } = require('@neondatabase/serverless')
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+
+      const ws = require('ws')
+
+      neonConfig.webSocketConstructor = ws
+
+
+      const pool = new Pool({ connectionString: dbUrl })
+
+      const adapter = new PrismaNeon(pool)
+
+      return new PrismaClient({
+
+        adapter,
+
+        log: ['error'],
+
+      })
+
+    } catch (err) {
+
+      console.error('[db] Failed to initialize Neon adapter, falling back to standard Prisma:', err)
+
+      // Fall through to standard client
+
+    }
+
   }
 
-  // Dev / non-Neon: standard Prisma client
+
+  // Standard Prisma client (default — works with all Postgres providers)
+
   return new PrismaClient({
+
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+
   })
+
 }
+
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient()
 
+
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+
 
 export default prisma
