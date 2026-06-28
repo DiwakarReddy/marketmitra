@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Sparkles, Calendar, X, Loader2, MessageSquare, Mic, Image as ImageIcon, TrendingUp, Send, Eye, Users, IndianRupee, BarChart3, FlaskConical, Megaphone } from 'lucide-react'
+import { Plus, Sparkles, Calendar, X, Loader2, MessageSquare, Mic, Image as ImageIcon, TrendingUp, Send, Eye, Users, IndianRupee, BarChart3, FlaskConical, Megaphone, Trash2, Info, Edit3 } from 'lucide-react'
 
 interface Campaign {
   id: string
@@ -52,6 +52,8 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
   const [campaigns, setCampaigns] = useState(initialCampaigns)
   const [creating, setCreating] = useState(false)
   const [view, setView] = useState<'list' | 'ab-test'>('list')
+  const [viewing, setViewing] = useState<Campaign | null>(null)
+  const [sendingId, setSendingId] = useState<string | null>(null)
 
   const stats = {
     total: campaigns.length,
@@ -130,7 +132,7 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                           {c.messageBody && (
                             <p className="text-sm text-ink-600 mt-1 line-clamp-2">{c.messageBody}</p>
                           )}
-                          <div className="flex items-center gap-4 mt-2 text-xs">
+                          <div className="flex items-center gap-4 mt-2 text-xs flex-wrap">
                             <span className="text-ink-500">📊 {c.leads} leads</span>
                             <span className="text-ink-500">📅 {c.bookings} bookings</span>
                             <span className="text-ink-500">💰 ₹{(c.revenuePaise / 100).toLocaleString('en-IN')}</span>
@@ -138,7 +140,23 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
                           </div>
                         </div>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="ghost"><Eye className="w-3 h-3" /></Button>
+                          {(c.status === 'draft' || c.status === 'scheduled') && (
+                            <Button
+                              size="sm"
+                              variant="brand"
+                              onClick={() => sendNow(c.id)}
+                              disabled={sendingId === c.id}
+                            >
+                              {sendingId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                              Send
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => setViewing(c)} title="View details">
+                            <Eye className="w-3 h-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => deleteCampaign(c)} title="Delete">
+                            <Trash2 className="w-3 h-3 text-red-500" />
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -162,8 +180,62 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
           }}
         />
       )}
+
+      {viewing && (
+        <CampaignDetailModal
+          campaign={viewing}
+          onClose={() => setViewing(null)}
+          onUpdated={(updated) => {
+            setCampaigns(campaigns.map((c) => (c.id === updated.id ? updated : c)))
+            setViewing(updated)
+          }}
+          onDeleted={() => {
+            setCampaigns(campaigns.filter((c) => c.id !== viewing.id))
+            setViewing(null)
+          }}
+          onSent={(updated) => {
+            setCampaigns(campaigns.map((c) => (c.id === updated.id ? updated : c)))
+            setViewing(updated)
+          }}
+        />
+      )}
     </div>
   )
+
+  async function sendNow(id: string) {
+    setSendingId(id)
+    try {
+      const res = await fetch(`/api/campaigns/${id}/send`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Send failed')
+      const updated: Campaign = {
+        ...campaigns.find((c) => c.id === id)!,
+        ...data.campaign,
+      }
+      setCampaigns(campaigns.map((c) => (c.id === id ? updated : c)))
+      toast({
+        title: `Sent to ${data.sent} customer${data.sent === 1 ? '' : 's'}`,
+        description: data.failed ? `${data.failed} failed` : undefined,
+        variant: data.failed > 0 ? 'warning' as any : 'success',
+      })
+    } catch (err: any) {
+      toast({ title: 'Send failed', description: err.message, variant: 'error' })
+    } finally {
+      setSendingId(null)
+    }
+  }
+
+  async function deleteCampaign(c: Campaign) {
+    if (!confirm(`Delete campaign "${c.name}"? This cannot be undone.`)) return
+    try {
+      const res = await fetch(`/api/campaigns/${c.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Delete failed')
+      setCampaigns(campaigns.filter((x) => x.id !== c.id))
+      toast({ title: 'Campaign deleted', variant: 'success' })
+    } catch (err: any) {
+      toast({ title: 'Delete failed', description: err.message, variant: 'error' })
+    }
+  }
 }
 
 function StatCard({ label, value, icon: Icon, color }: { label: string; value: any; icon: any; color: string }) {
@@ -227,6 +299,8 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
     scheduledFor: '',
   })
   const [generating, setGenerating] = useState(false)
+  const [showTypeHelp, setShowTypeHelp] = useState(false)
+  const [showChannelHelp, setShowChannelHelp] = useState(false)
 
   const generateMessage = async () => {
     setGenerating(true)
@@ -299,7 +373,28 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-ink-600 mb-1.5 block">Type</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-medium text-ink-600 block">
+                    Type <span className="text-ink-400">(what kind of campaign)</span>
+                  </label>
+                  <button
+                    onClick={() => setShowTypeHelp(!showTypeHelp)}
+                    className="text-[10px] text-teal-700 hover:underline flex items-center gap-1"
+                  >
+                    <Info className="w-3 h-3" /> {showTypeHelp ? 'hide' : 'explain'}
+                  </button>
+                </div>
+                {showTypeHelp && (
+                  <div className="mb-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 space-y-1">
+                    <p><strong>Type</strong> = the <em>purpose</em> of the campaign.</p>
+                    <p>• <strong>Reactivation</strong> — re-engage past customers who haven't visited in 90+ days.</p>
+                    <p>• <strong>Birthday / Anniversary</strong> — auto-send wishes on customer's special day with an offer.</p>
+                    <p>• <strong>Festival</strong> — pre-loaded greetings for Diwali, Holi, Eid, etc.</p>
+                    <p>• <strong>Review request</strong> — ask satisfied customers to leave a Google review.</p>
+                    <p>• <strong>Broadcast</strong> — one-off message to any audience.</p>
+                    <p>• <strong>Voice AI / Instagram / Google Ads</strong> — run on those specific channels.</p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {Object.entries(TYPE_LABELS).map(([k, v]) => {
                     const Icon = v.icon
@@ -307,7 +402,7 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
                       <button
                         key={k}
                         onClick={() => setForm({ ...form, type: k })}
-                        className={`p-3 border-2 rounded-lg text-left ${form.type === k ? 'border-teal-500 bg-teal-50' : 'border-ink-200'}`}
+                        className={`p-3 border-2 rounded-lg text-left ${form.type === k ? 'border-teal-500 bg-teal-50' : 'border-ink-200 hover:border-ink-300'}`}
                       >
                         <Icon className={`w-5 h-5 mb-1 ${form.type === k ? 'text-teal-700' : 'text-ink-500'}`} />
                         <div className="text-sm font-medium">{v.label}</div>
@@ -317,18 +412,39 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
                 </div>
               </div>
               <div>
-                <label className="text-xs font-medium text-ink-600 mb-1.5 block">Channel</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-medium text-ink-600 block">
+                    Channel <span className="text-ink-400">(where to send it)</span>
+                  </label>
+                  <button
+                    onClick={() => setShowChannelHelp(!showChannelHelp)}
+                    className="text-[10px] text-teal-700 hover:underline flex items-center gap-1"
+                  >
+                    <Info className="w-3 h-3" /> {showChannelHelp ? 'hide' : 'explain'}
+                  </button>
+                </div>
+                {showChannelHelp && (
+                  <div className="mb-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 space-y-1">
+                    <p><strong>Channel</strong> = the <em>delivery medium</em>.</p>
+                    <p>• <strong>WhatsApp</strong> — text + template messages, 95% open rate. Default.</p>
+                    <p>• <strong>Voice AI</strong> — outbound AI phone calls (Twilio). Good for reactivation.</p>
+                    <p>• <strong>Instagram</strong> — DMs and posts via Instagram Graph API.</p>
+                    <p>• <strong>Google Ads</strong> — paid search/display ads (uses your budget).</p>
+                    <p>• <strong>Email</strong> — transactional emails (Resend).</p>
+                    <p className="pt-1 border-t border-blue-200 mt-1">💡 Pick WhatsApp for first-time campaigns — highest ROI.</p>
+                  </div>
+                )}
                 <select
                   className="w-full h-10 rounded-lg border border-ink-200 px-3 text-sm bg-white"
                   value={form.channels}
                   onChange={(e) => setForm({ ...form, channels: e.target.value })}
                 >
-                  <option value="whatsapp">WhatsApp</option>
-                  <option value="voice">Voice AI</option>
-                  <option value="instagram">Instagram</option>
-                  <option value="google_ads">Google Ads</option>
+                  <option value="whatsapp">WhatsApp — Recommended</option>
+                  <option value="voice">Voice AI (phone calls)</option>
+                  <option value="instagram">Instagram DMs</option>
+                  <option value="google_ads">Google Ads (paid)</option>
                   <option value="email">Email</option>
-                  <option value="all">All channels</option>
+                  <option value="all">All configured channels</option>
                 </select>
               </div>
             </>
@@ -446,8 +562,206 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
               setStep(steps[idx + 1])
             }}>Next</Button>
           ) : (
-            <Button variant="brand" onClick={save}><Send className="w-4 h-4" />{form.scheduledFor ? 'Schedule' : 'Send now'}</Button>
+            <Button variant="brand" onClick={save}><Send className="w-4 h-4" />{form.scheduledFor ? 'Schedule' : 'Save as draft'}</Button>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CampaignDetailModal({
+  campaign,
+  onClose,
+  onUpdated,
+  onDeleted,
+  onSent,
+}: {
+  campaign: Campaign
+  onClose: () => void
+  onUpdated: (c: Campaign) => void
+  onDeleted: () => void
+  onSent: (c: Campaign) => void
+}) {
+  const { toast } = useToast()
+  const [edit, setEdit] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [form, setForm] = useState({
+    name: campaign.name,
+    messageBody: campaign.messageBody || '',
+    status: campaign.status,
+    scheduledFor: campaign.scheduledFor ? new Date(campaign.scheduledFor).toISOString().slice(0, 16) : '',
+  })
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          messageBody: form.messageBody,
+          status: form.status,
+          scheduledFor: form.scheduledFor || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      onUpdated(data.campaign)
+      setEdit(false)
+      toast({ title: 'Campaign updated', variant: 'success' })
+    } catch (err: any) {
+      toast({ title: 'Save failed', description: err.message, variant: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const send = async () => {
+    setSending(true)
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/send`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Send failed')
+      onSent(data.campaign)
+      toast({
+        title: `Sent to ${data.sent} customer${data.sent === 1 ? '' : 's'}`,
+        description: data.failed ? `${data.failed} failed` : undefined,
+        variant: data.failed > 0 ? 'warning' as any : 'success',
+      })
+    } catch (err: any) {
+      toast({ title: 'Send failed', description: err.message, variant: 'error' })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const remove = async () => {
+    if (!confirm('Delete this campaign?')) return
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Delete failed')
+      onDeleted()
+    } catch (err: any) {
+      toast({ title: 'Delete failed', description: err.message, variant: 'error' })
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6 border-b border-ink-100 flex items-center justify-between sticky top-0 bg-white">
+          <div>
+            <h2 className="text-xl font-bold">{edit ? 'Edit campaign' : campaign.name}</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant={STATUS_VARIANT[campaign.status] || 'secondary'}>{campaign.status}</Badge>
+              <Badge variant="outline" className="text-xs">{campaign.type}</Badge>
+              <Badge variant="outline" className="text-xs">{campaign.channels}</Badge>
+            </div>
+          </div>
+          <div className="flex gap-1">
+            {!edit && (
+              <Button variant="outline" size="sm" onClick={() => setEdit(true)}>
+                <Edit3 className="w-3 h-3" /> Edit
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" onClick={onClose}><X className="w-4 h-4" /></Button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {edit ? (
+            <>
+              <div>
+                <label className="text-xs font-medium text-ink-700 mb-1.5 block">Name</label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-ink-700 mb-1.5 block">Message</label>
+                <textarea
+                  className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm min-h-[150px]"
+                  value={form.messageBody}
+                  onChange={(e) => setForm({ ...form, messageBody: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-ink-700 mb-1.5 block">Status</label>
+                  <select
+                    className="w-full h-10 rounded-lg border border-ink-200 px-3 text-sm bg-white"
+                    value={form.status}
+                    onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="running">Running</option>
+                    <option value="completed">Completed</option>
+                    <option value="paused">Paused</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-ink-700 mb-1.5 block">Scheduled for</label>
+                  <Input
+                    type="datetime-local"
+                    value={form.scheduledFor}
+                    onChange={(e) => setForm({ ...form, scheduledFor: e.target.value })}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {campaign.messageBody && (
+                <div>
+                  <div className="text-xs font-medium text-ink-700 mb-1.5">Message</div>
+                  <div className="p-3 bg-ink-50 rounded-lg text-sm text-ink-800 whitespace-pre-wrap">{campaign.messageBody}</div>
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-ink-50 rounded-lg text-center">
+                  <div className="text-2xl font-bold text-ink-900">{campaign.leads}</div>
+                  <div className="text-xs text-ink-500">Leads</div>
+                </div>
+                <div className="p-3 bg-ink-50 rounded-lg text-center">
+                  <div className="text-2xl font-bold text-ink-900">{campaign.bookings}</div>
+                  <div className="text-xs text-ink-500">Bookings</div>
+                </div>
+                <div className="p-3 bg-ink-50 rounded-lg text-center">
+                  <div className="text-2xl font-bold text-ink-900">₹{(campaign.revenuePaise / 100).toLocaleString('en-IN')}</div>
+                  <div className="text-xs text-ink-500">Revenue</div>
+                </div>
+              </div>
+              <div className="text-xs text-ink-500 space-y-1">
+                {campaign.scheduledFor && <div>⏰ Scheduled: {new Date(campaign.scheduledFor).toLocaleString('en-IN')}</div>}
+                {campaign.startedAt && <div>▶️ Started: {new Date(campaign.startedAt).toLocaleString('en-IN')}</div>}
+                {campaign.endedAt && <div>⏹️ Ended: {new Date(campaign.endedAt).toLocaleString('en-IN')}</div>}
+                <div>📅 Created: {new Date(campaign.createdAt).toLocaleString('en-IN')}</div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-ink-100 flex justify-between">
+          <Button variant="outline" onClick={remove} className="text-red-600 border-red-200 hover:bg-red-50">
+            <Trash2 className="w-3 h-3" /> Delete
+          </Button>
+          <div className="flex gap-2">
+            {edit ? (
+              <>
+                <Button variant="outline" onClick={() => setEdit(false)}>Cancel</Button>
+                <Button variant="brand" onClick={save} disabled={saving}>
+                  {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+                </Button>
+              </>
+            ) : (campaign.status === 'draft' || campaign.status === 'scheduled') && (
+              <Button variant="brand" onClick={send} disabled={sending}>
+                {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                Send now
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

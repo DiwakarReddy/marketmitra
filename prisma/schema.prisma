@@ -103,6 +103,19 @@ model Business {
   notifyByEmail    Boolean  @default(true)
   notifyByWhatsapp Boolean  @default(false)
   dailySummaryHour Int      @default(9)
+
+  // Tax / GST (editable in Settings, displayed on Billing page)
+  legalName        String?  // Trade/legal name on GST certificate (often different from brand name)
+  gstin            String?  // 15-char GSTIN e.g. "23AAAAA0000A1Z5"
+  pan              String?  // 10-char PAN e.g. "AAAAA0000A"
+  hsnSac           String?  // Default HSN/SAC code for services (e.g. "998365" for marketing)
+  stateCode        String?  // 2-digit state code for tax split (intra vs inter)
+  taxScheme        String?  // 'regular' | 'composition' | 'exempt'
+  billingAddress   String?  // Free-form address line 1
+  billingCity      String?
+  billingState     String?
+  billingPincode   String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

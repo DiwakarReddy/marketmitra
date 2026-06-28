@@ -10,42 +10,26 @@
 //      anjali@pearlsmile.demo
 
 import { PrismaClient } from '@prisma/client'
-import crypto from 'crypto'
+import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password + 'marketmitra-salt').digest('hex')
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 10)
 }
 
 async function main() {
   console.log('🌱 Seeding demo data...')
 
-  // Wipe existing demo data
-  await prisma.message.deleteMany({
-    where: { conversation: { business: { ownerEmail: { endsWith: '@demo' } } } },
-  })
-  await prisma.conversation.deleteMany({
-    where: { business: { ownerEmail: { endsWith: '@demo' } } },
-  })
-  await prisma.appointment.deleteMany({
-    where: { business: { ownerEmail: { endsWith: '@demo' } } },
-  })
-  await prisma.customer.deleteMany({
-    where: { business: { ownerEmail: { endsWith: '@demo' } } },
-  })
-  await prisma.lead.deleteMany({
-    where: { business: { ownerEmail: { endsWith: '@demo' } } },
-  })
-  await prisma.activity.deleteMany({
-    where: { business: { ownerEmail: { endsWith: '@demo' } } },
-  })
-  await prisma.user.deleteMany({
-    where: { email: { endsWith: '@demo' } },
-  })
-  await prisma.business.deleteMany({
-    where: { ownerEmail: { endsWith: '@demo' } },
-  })
+  // Wipe ALL demo-related rows (TRUNCATE CASCADE ignores FK constraints).
+  // Tables list MUST match the current Prisma schema — do not add models that
+  // don't exist (e.g. KnowledgeDoc, WidgetConfig, Integration were removed in v14).
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE "Account", "Session", "Business", "User", "Service", "BusinessHour", "Customer", "Conversation", "Message", "Campaign", "Approval", "Appointment", "Lead", "VoiceCall", "Activity", "Invoice", "FailedMessage", "AutomationEvent", "Festival", "TeamInvite", "ChannelConfig", "ChannelConfigAudit" RESTART IDENTITY CASCADE`)
+
+  // Wipe festivals too (they have no businessId)
+  await prisma.festival.deleteMany({})
+
+  console.log('  → wiped existing data')
 
   // ============ DEMO 1: SmileCare Dental Indore (Hinglish, Starter) ============
   const smilecare = await prisma.business.create({
@@ -83,7 +67,7 @@ async function main() {
     data: {
       email: 'priya@smilecare.demo',
       name: 'Priya Sharma',
-      passwordHash: hashPassword('demo1234'),
+      passwordHash: await hashPassword('demo1234'),
       businessId: smilecare.id,
       role: 'owner',
     },
@@ -176,7 +160,7 @@ async function main() {
     data: {
       email: 'rahul@smiledental.demo',
       name: 'Dr. Rahul Mehta',
-      passwordHash: hashPassword('demo1234'),
+      passwordHash: await hashPassword('demo1234'),
       businessId: smileMumbai.id,
       role: 'owner',
     },
@@ -215,7 +199,7 @@ async function main() {
     data: {
       email: 'anjali@pearlsmile.demo',
       name: 'Dr. Anjali Reddy',
-      passwordHash: hashPassword('demo1234'),
+      passwordHash: await hashPassword('demo1234'),
       businessId: pearl.id,
       role: 'owner',
     },

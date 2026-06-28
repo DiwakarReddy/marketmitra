@@ -203,30 +203,76 @@ export default async function BillingPage() {
         </CardContent>
       </Card>
 
-      {/* GST info */}
+      {/* GST info — driven by real Business fields, editable in Settings */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-blue-600" />GST & Tax</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-            <div>
-              <div className="text-ink-500">Your GSTIN</div>
-              <div className="font-mono font-semibold">{business?.id ? `23AAAAA0000A1Z5 (auto)` : 'Not set'}</div>
+          {business?.gstin || business?.pan ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div>
+                <div className="text-ink-500">Your GSTIN</div>
+                <div className="font-mono font-semibold">
+                  {business.gstin || <span className="text-ink-400 italic">Not set</span>}
+                </div>
+              </div>
+              <div>
+                <div className="text-ink-500">Tax type</div>
+                <div className="font-semibold">
+                  {business.stateCode
+                    ? `State ${business.stateCode} · ${business.taxScheme === 'composition' ? 'Composition scheme' : business.taxScheme === 'exempt' ? 'Exempt / unregistered' : 'Regular · 18% GST'}`
+                    : 'Set state code in Settings'}
+                </div>
+              </div>
+              <div>
+                <div className="text-ink-500">HSN/SAC code</div>
+                <div className="font-mono">
+                  {business.hsnSac || <span className="text-ink-400 italic">Not set</span>}
+                  {business.hsnSac === '998365' && ' (Marketing services)'}
+                </div>
+              </div>
+              <div>
+                <div className="text-ink-500">PAN</div>
+                <div className="font-mono">
+                  {business.pan || <span className="text-ink-400 italic">Not set</span>}
+                </div>
+              </div>
+              {business.legalName && (
+                <div className="md:col-span-2">
+                  <div className="text-ink-500">Legal name</div>
+                  <div className="font-semibold">{business.legalName}</div>
+                </div>
+              )}
+              {business.billingAddress && (
+                <div className="md:col-span-2">
+                  <div className="text-ink-500">Billing address</div>
+                  <div className="text-ink-700">
+                    {business.billingAddress}
+                    {business.billingCity && `, ${business.billingCity}`}
+                    {business.billingState && `, ${business.billingState}`}
+                    {business.billingPincode && ` - ${business.billingPincode}`}
+                  </div>
+                </div>
+              )}
             </div>
-            <div>
-              <div className="text-ink-500">Tax type</div>
-              <div className="font-semibold">Intra-state: CGST 9% + SGST 9% = 18%</div>
+          ) : (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-semibold text-amber-900">GST details not set</div>
+                  <p className="text-sm text-amber-800 mt-1">
+                    Add your GSTIN, PAN and billing address in Settings so invoices are tax-compliant.
+                    Without GSTIN, invoices show 18% IGST regardless of customer state.
+                  </p>
+                  <Button asChild size="sm" variant="outline" className="mt-3">
+                    <Link href="/settings">Add tax details</Link>
+                  </Button>
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-ink-500">HSN/SAC code</div>
-              <div className="font-mono">998365 (Marketing services)</div>
-            </div>
-            <div>
-              <div className="text-ink-500">PAN</div>
-              <div className="font-mono">AAAAA0000A</div>
-            </div>
-          </div>
+          )}
           <p className="text-xs text-ink-500 mt-3">
             All invoices include CGST/SGST/IGST auto-detected by customer state. Download PDFs for your accountant.
           </p>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,9 +9,21 @@ import { useToast } from '@/components/ui/toast'
 import { PLANS, getPlan, type PlanTier } from '@/lib/plans'
 
 export default function PlansPage() {
-  const [currentPlan, setCurrentPlan] = useState<PlanTier>('starter')
+  const [currentPlan, setCurrentPlan] = useState<PlanTier>('trial')
+  const [loaded, setLoaded] = useState(false)
   const [changing, setChanging] = useState<PlanTier | null>(null)
   const { toast } = useToast()
+
+  // Fetch real current plan from /api/me/business (uses business.plan)
+  useEffect(() => {
+    fetch('/api/me/business')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.business?.plan) setCurrentPlan(data.business.plan as PlanTier)
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
 
   const changePlan = async (planId: PlanTier) => {
     setChanging(planId)

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { CustomersClient } from './customers-client'
 import { CustomerImporter } from './customer-importer'
+import { AddCustomerButton } from './add-customer-button'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,9 +28,12 @@ export default async function CustomersPage() {
           <h1 className="text-3xl font-bold text-ink-900">Customers</h1>
           <p className="text-ink-600 mt-1">{customers.length} customers in your database</p>
         </div>
+        <div className="flex gap-2">
+          <CustomerImporter />
+          <AddCustomerButton />
+        </div>
       </div>
       <CustomersClient initialCustomers={customers as any} />
-      <CustomerImporter />
     </div>
   )
 }

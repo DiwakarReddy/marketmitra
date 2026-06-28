@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
-import { Save, Star, Gift, Calendar, TrendingUp, AlertTriangle, MessageCircle, CheckCircle2, XCircle, Loader2, Download, Trash2, Mail, Bell, Globe, Lock, ArrowUpRight } from 'lucide-react'
+import { Save, Star, Gift, Calendar, TrendingUp, AlertTriangle, MessageCircle, CheckCircle2, XCircle, Loader2, Download, Trash2, Mail, Bell, Globe, Lock, ArrowUpRight, FileText } from 'lucide-react'
 import { IntegrationsCard } from '@/components/integrations-card'
 
 interface BusinessData {
@@ -499,6 +499,193 @@ export function SettingsClient({ business }: { business: BusinessData }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Tax & Billing Details (editable — replaces hardcoded GST in Billing page) */}
+      <TaxSettingsCard />
     </>
+  )
+}
+
+// Tax settings: legal name, GSTIN, PAN, HSN/SAC, address
+// Persisted via /api/me/business-tax
+function TaxSettingsCard() {
+  const { toast } = useToast()
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    legalName: '',
+    gstin: '',
+    pan: '',
+    hsnSac: '998365',
+    stateCode: '',
+    taxScheme: 'regular',
+    billingAddress: '',
+    billingCity: '',
+    billingState: '',
+    billingPincode: '',
+  })
+
+  useEffect(() => {
+    fetch('/api/me/business-tax')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.tax) setForm((f) => ({ ...f, ...data.tax }))
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/me/business-tax', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      if (data.tax) setForm({ ...form, ...data.tax })
+      toast({ title: 'Tax details saved', variant: 'success' })
+    } catch (err: any) {
+      toast({ title: 'Could not save', description: err.message, variant: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <FileText className="w-5 h-5 text-blue-600" />
+          Tax & Billing details
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-xs text-ink-500">
+          These details appear on every invoice we generate for you. GSTIN is optional — only fill if you're registered.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-ink-700 mb-1.5 block">Legal / Trade name</label>
+            <Input
+              placeholder="As on GST certificate"
+              value={form.legalName}
+              onChange={(e) => setForm({ ...form, legalName: e.target.value })}
+              disabled={loading}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-ink-700 mb-1.5 block">GSTIN</label>
+            <Input
+              placeholder="22AAAAA0000A1Z5"
+              maxLength={15}
+              value={form.gstin}
+              onChange={(e) => setForm({ ...form, gstin: e.target.value.toUpperCase() })}
+              className="font-mono"
+              disabled={loading}
+            />
+            <p className="text-xs text-ink-500 mt-1">15-char. We auto-derive state code + PAN.</p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-ink-700 mb-1.5 block">PAN</label>
+            <Input
+              placeholder="AAAAA0000A"
+              maxLength={10}
+              value={form.pan}
+              onChange={(e) => setForm({ ...form, pan: e.target.value.toUpperCase() })}
+              className="font-mono"
+              disabled={loading}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-ink-700 mb-1.5 block">HSN/SAC code</label>
+            <Input
+              placeholder="998365"
+              value={form.hsnSac}
+              onChange={(e) => setForm({ ...form, hsnSac: e.target.value })}
+              className="font-mono"
+              disabled={loading}
+            />
+            <p className="text-xs text-ink-500 mt-1">998365 = Marketing services. 9993 = Dental & health.</p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-ink-700 mb-1.5 block">Tax scheme</label>
+            <select
+              className="w-full h-10 rounded-lg border border-ink-200 px-3 text-sm bg-white"
+              value={form.taxScheme}
+              onChange={(e) => setForm({ ...form, taxScheme: e.target.value })}
+              disabled={loading}
+            >
+              <option value="regular">Regular (file monthly GSTR)</option>
+              <option value="composition">Composition (pays turnover tax)</option>
+              <option value="exempt">Exempt / Unregistered</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-ink-700 mb-1.5 block">State code</label>
+            <Input
+              placeholder="23 (auto from GSTIN)"
+              maxLength={2}
+              value={form.stateCode}
+              onChange={(e) => setForm({ ...form, stateCode: e.target.value.replace(/\D/g, '') })}
+              className="font-mono"
+              disabled={loading}
+            />
+          </div>
+        </div>
+
+        <div className="pt-2 border-t border-ink-100">
+          <p className="text-xs font-semibold text-ink-700 mb-2">Billing address (printed on invoices)</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="md:col-span-2">
+              <label className="text-xs font-medium text-ink-700 mb-1.5 block">Address</label>
+              <Input
+                placeholder="123 MG Road, Sector 5"
+                value={form.billingAddress}
+                onChange={(e) => setForm({ ...form, billingAddress: e.target.value })}
+                disabled={loading}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-ink-700 mb-1.5 block">City</label>
+              <Input
+                value={form.billingCity}
+                onChange={(e) => setForm({ ...form, billingCity: e.target.value })}
+                disabled={loading}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-ink-700 mb-1.5 block">State</label>
+              <Input
+                value={form.billingState}
+                onChange={(e) => setForm({ ...form, billingState: e.target.value })}
+                disabled={loading}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-ink-700 mb-1.5 block">Pincode</label>
+              <Input
+                placeholder="452001"
+                maxLength={6}
+                value={form.billingPincode}
+                onChange={(e) => setForm({ ...form, billingPincode: e.target.value.replace(/\D/g, '') })}
+                className="font-mono"
+                disabled={loading}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <Button variant="brand" onClick={save} disabled={saving || loading}>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save tax details
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

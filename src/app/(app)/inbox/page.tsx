@@ -1,8 +1,9 @@
-import { Card } from '@/components/ui/card'
 import { prisma } from '@/lib/db'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { InboxClient } from './inbox-client'
+import { InboxNotConfigured } from './inbox-not-configured'
+import { resolveChannel } from '@/lib/channel-resolver'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,14 @@ export default async function InboxPage() {
 
   if (!businessId) {
     return <div className="p-6">Please sign in</div>
+  }
+
+  // Check if WhatsApp is configured for this business
+  const waChannel = await resolveChannel(businessId, 'whatsapp').catch(() => null)
+  const whatsappConfigured = !!waChannel && !!waChannel.provider
+
+  if (!whatsappConfigured) {
+    return <InboxNotConfigured />
   }
 
   const [conversations, counts] = await Promise.all([

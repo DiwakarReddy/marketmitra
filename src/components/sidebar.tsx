@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useLang } from '@/components/language-toggle'
 import { t } from '@/lib/i18n'
@@ -30,21 +31,21 @@ import {
 } from 'lucide-react'
 
 const mainNav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/inbox', label: 'WhatsApp Inbox', icon: MessageSquare, badge: '3' },
-  { href: '/calendar', label: 'Calendar', icon: CalendarDays },
-  { href: '/campaigns', label: 'Campaigns', icon: Megaphone, badge: '12' },
-  { href: '/customers', label: 'Customers', icon: Users },
-  { href: '/leads', label: 'Leads & Revenue', icon: BarChart3 },
-  { href: '/approvals', label: 'Approvals', icon: CheckCircle2, badge: '3', badgeColor: 'red' },
-  { href: '/failures', label: 'Failed Messages', icon: AlertCircle },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, badgeKey: null as keyof SidebarCounts | null },
+  { href: '/inbox', label: 'WhatsApp Inbox', icon: MessageSquare, badgeKey: 'inbox' as keyof SidebarCounts },
+  { href: '/calendar', label: 'Calendar', icon: CalendarDays, badgeKey: null },
+  { href: '/campaigns', label: 'Campaigns', icon: Megaphone, badgeKey: 'campaigns' as keyof SidebarCounts },
+  { href: '/customers', label: 'Customers', icon: Users, badgeKey: null },
+  { href: '/leads', label: 'Leads & Revenue', icon: BarChart3, badgeKey: null },
+  { href: '/approvals', label: 'Approvals', icon: CheckCircle2, badgeKey: 'approvals' as keyof SidebarCounts, badgeColor: 'red' },
+  { href: '/failures', label: 'Failed Messages', icon: AlertCircle, badgeKey: 'failures' as keyof SidebarCounts },
 ]
 
 const channelsNav = [
-  { href: '/channels/whatsapp', label: 'WhatsApp', icon: MessageSquare },
-  { href: '/channels/voice', label: 'Voice AI', icon: Phone, badge: 'New' },
-  { href: '/channels/instagram', label: 'Instagram', icon: Instagram },
-  { href: '/channels/google', label: 'Google Ads', icon: Target },
+  { href: '/channels/whatsapp', label: 'WhatsApp', icon: MessageSquare, channelKey: 'whatsapp' },
+  { href: '/channels/voice', label: 'Voice AI', icon: Phone, badge: 'New', channelKey: 'voice' },
+  { href: '/channels/instagram', label: 'Instagram', icon: Instagram, channelKey: 'instagram' },
+  { href: '/channels/google', label: 'Google Ads', icon: Target, channelKey: 'google_ads' },
 ]
 
 const accountNav = [
@@ -57,6 +58,13 @@ const accountNav = [
 
 const mainNavLabels = ['nav.dashboard', 'nav.inbox', 'nav.calendar', 'nav.campaigns', 'nav.customers', 'nav.leads', 'nav.approvals', 'nav.failures']
 const accountNavLabels = ['nav.knowledge', 'nav.widget', 'nav.templates', 'nav.settings', 'nav.billing']
+
+interface SidebarCounts {
+  inbox: number
+  campaigns: number
+  approvals: number
+  failures: number
+}
 
 export function Sidebar({
   businessId,
@@ -76,6 +84,23 @@ export function Sidebar({
   // Hide channel links not in plan
   const isAdmin = userEmail && process.env.NEXT_PUBLIC_ADMIN_EMAIL && userEmail === process.env.NEXT_PUBLIC_ADMIN_EMAIL
   const isOwner = userRole === 'owner' || isAdmin
+
+  // Dynamic sidebar counts (replaces hardcoded badges)
+  const [counts, setCounts] = useState<SidebarCounts>({ inbox: 0, campaigns: 0, approvals: 0, failures: 0 })
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/me/sidebar-counts', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled && typeof data?.inbox === 'number') setCounts(data)
+      } catch {}
+    }
+    load()
+    const interval = setInterval(load, 30000) // refresh every 30s
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [])
 
   return (
     <aside className="w-64 bg-white border-r border-ink-100 flex flex-col flex-shrink-0 h-screen">
@@ -100,6 +125,8 @@ export function Sidebar({
         {mainNav.map((item, idx) => {
           const Icon = item.icon
           const active = pathname === item.href
+          const dynamicCount = item.badgeKey ? counts[item.badgeKey] : 0
+          const showBadge = (item.badgeKey && dynamicCount > 0)
           return (
             <Link
               key={item.href}
@@ -111,12 +138,12 @@ export function Sidebar({
             >
               <Icon className={cn('w-4 h-4', active ? 'text-teal-700' : 'text-ink-500')} />
               <span>{tt(mainNavLabels[idx])}</span>
-              {(item as any).badge && (
+              {showBadge && (
                 <span className={cn(
-                  'ml-auto text-[10px] font-bold rounded-full px-2 py-0.5',
-                  (item as any).badgeColor === 'red' ? 'bg-red-100 text-red-700' : 'bg-ink-100 text-ink-700'
+                  'ml-auto text-[10px] font-bold rounded-full px-2 py-0.5 min-w-[20px] text-center',
+                  item.badgeColor === 'red' ? 'bg-red-100 text-red-700' : 'bg-ink-100 text-ink-700'
                 )}>
-                  {(item as any).badge}
+                  {dynamicCount > 99 ? '99+' : dynamicCount}
                 </span>
               )}
             </Link>
@@ -127,9 +154,7 @@ export function Sidebar({
         {channelsNav.map((item) => {
           const Icon = item.icon
           const active = pathname === item.href
-          // Map href to channel key
-          const channelKey = item.href.replace('/channels/', '').replace('google', 'google_ads') as any
-          const allowed = canConnectChannel(userPlan || 'trial', channelKey)
+          const allowed = canConnectChannel(userPlan || 'trial', item.channelKey as any)
           if (!allowed) return null // Hide if not in plan
           return (
             <Link
