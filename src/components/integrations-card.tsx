@@ -40,6 +40,7 @@ export function IntegrationsCard({ onChange }: { onChange: () => void }) {
   const [editingChannel, setEditingChannel] = useState<ChannelData | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [testingChannel, setTestingChannel] = useState<string | null>(null)
+  const [sendingTest, setSendingTest] = useState<string | null>(null)
   const [testPhone, setTestPhone] = useState('')
   const [testMessage, setTestMessage] = useState('🙏 Hi! This is a test message from MarketMitra. If you received this, your WhatsApp integration is working correctly!')
   const [userPlan, setUserPlan] = useState<string>('trial')
@@ -76,7 +77,7 @@ export function IntegrationsCard({ onChange }: { onChange: () => void }) {
       toast({ title: 'Phone must be in E.164 format', description: 'e.g. +919876543210', variant: 'error' })
       return
     }
-    setTestingChannel(channel)
+    setSendingTest(channel)
     try {
       const res = await fetch(`/api/channels/${channel}/test-send`, {
         method: 'POST',
@@ -96,7 +97,7 @@ export function IntegrationsCard({ onChange }: { onChange: () => void }) {
     } catch (err: any) {
       toast({ title: 'Test failed', description: err.message, variant: 'error' })
     } finally {
-      setTestingChannel(null)
+      setSendingTest(null)
     }
   }
 
@@ -244,10 +245,10 @@ export function IntegrationsCard({ onChange }: { onChange: () => void }) {
                           size="sm"
                           variant="brand"
                           onClick={() => sendTest(c.channel)}
-                          disabled={testingChannel === c.channel}
+                          disabled={sendingTest === c.channel}
                         >
-                          {testingChannel ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                          Send test
+                          {sendingTest === c.channel ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                          {sendingTest === c.channel ? 'Sending…' : 'Send test'}
                         </Button>
                       </div>
                     </div>

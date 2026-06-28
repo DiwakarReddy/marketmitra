@@ -79,15 +79,17 @@ export async function POST(req: NextRequest) {
   }
 
   // Final fallback: Hinglish template (no usage charge — this is a degraded response)
+  let aiAvailable = true
   if (!result) {
-    result = `🎉 ${userMessage.split(' ').slice(0, 3).join(' ')} ke liye special offer!
+    aiAvailable = false
+    const topicLine = (userMessage as string).split('\n').find((l: string) => l.startsWith('Topic:'))
+    const topic = topicLine ? topicLine.replace('Topic:', '').trim() : ''
+    result = `🙏 नमस्ते! ${topic ? topic + ' के बारे में update है।' : 'हमारी तरफ से एक update है।'}
 
-Hum aapke liye best deals laaye hain. Abhi book karein aur 15% off paayein!
-
-Reply YES to book or call us at +91-XXXX-XXXX.
+जवाब दें तो हम details share करें।
 
 — MarketMitra`
   }
 
-  return NextResponse.json({ text: result })
+  return NextResponse.json({ text: result, aiAvailable })
 }

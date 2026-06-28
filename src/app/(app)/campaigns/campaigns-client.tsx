@@ -292,6 +292,7 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
     type: 'broadcast',
     channels: 'whatsapp',
     audience: 'all',
+    topic: '',          // What the campaign is about (e.g., "review after hospital visit")
     messageBody: '',
     budget: 5000,
     runABTest: false,
@@ -299,34 +300,75 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
     scheduledFor: '',
   })
   const [generating, setGenerating] = useState(false)
+  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null) // null = unknown
   const [showTypeHelp, setShowTypeHelp] = useState(false)
   const [showChannelHelp, setShowChannelHelp] = useState(false)
 
   const generateMessage = async () => {
     setGenerating(true)
     try {
+      const topicLine = form.topic
+        ? `Topic: ${form.topic}`
+        : ''
+      const audienceLabel = form.audience === 'all'
+        ? 'all customers'
+        : form.audience.startsWith('tag:')
+          ? `customers tagged "${form.audience.slice(4)}"`
+          : form.audience.replace(/_/g, ' ')
+      const systemPrompt = `You are a marketing copywriter for a small Indian business on WhatsApp. Write messages in Hinglish (Hindi + English mix, like real Indian small-business owners speak). Keep under 100 words. Use 1-2 emojis max. Always end with a clear call-to-action (reply YES, call now, or book link). Be warm and specific. Don't invent prices, dates, or services you're not told about.`
+      const userMessage = `Write a WhatsApp campaign message.
+Campaign type: ${form.type}
+Target audience: ${audienceLabel}
+${topicLine}
+
+Make it feel personal and conversational, not generic.`
+
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemPrompt: `You are a marketing expert writing WhatsApp messages for a small Indian business. The business is a ${form.type === 'broadcast' ? 'service business' : form.type} targeting the ${form.audience} audience. Write in Hinglish (mix of Hindi and English). Keep under 100 words. Use 1-2 emojis maximum. End with a call to action.`,
-          userMessage: `Write a campaign message for type "${form.type}" targeting audience "${form.audience}".`,
-        }),
+        body: JSON.stringify({ systemPrompt, userMessage }),
       })
       const data = await res.json()
       if (data.text) {
         setForm({ ...form, messageBody: data.text })
-        toast({ title: 'AI message generated', variant: 'success' })
+        if (data.aiAvailable === false) {
+          // API itself told us AI isn't configured
+          setAiAvailable(false)
+          toast({
+            title: 'AI not configured — using template',
+            description: 'Add your OpenAI or Google AI key in Settings → Integrations to enable real AI generation.',
+            variant: 'default',
+          })
+        } else {
+          setAiAvailable(true)
+          toast({ title: 'AI message generated ✨', variant: 'success' })
+        }
+      } else {
+        throw new Error('No text returned')
       }
-    } catch (err) {
-      // Mock fallback
-      setForm({ ...form, messageBody: `${form.audience} के लिए special offer! 🎉\n\nVisit us this week and get 20% off your ${form.type}. Reply YES to book.\n\n— MarketMitra` })
+    } catch (err: any) {
+      // Show a more useful fallback that's actually editable
+      const topic = form.topic || `${form.type} message`
+      setForm({
+        ...form,
+        messageBody: `🙏 नमस्ते! ${topic} के बारे में update है।
+
+हम आपके लिए कुछ special लेकर आए हैं। जवाब दें तो हम details share करें।
+
+— MarketMitra`,
+      })
+      toast({
+        title: 'AI unavailable — using starter template',
+        description: 'Edit the message above or add an AI key in Settings → Integrations.',
+        variant: 'default',
+      })
     } finally {
       setGenerating(false)
     }
   }
 
   const save = async () => {
+    const wantToSendNow = !form.scheduledFor
     const res = await fetch('/api/campaigns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -336,11 +378,37 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
         scheduledFor: form.scheduledFor || null,
       }),
     })
-    if (res.ok) {
-      const data = await res.json()
-      onCreate(data.campaign)
+    if (!res.ok) {
+      toast({ title: 'Could not save campaign', variant: 'error' })
+      return
+    }
+    const data = await res.json()
+    const created: Campaign = data.campaign
+
+    if (wantToSendNow) {
+      // Immediately send — don't leave it stuck in draft
+      setGenerating(true) // reuse as "in progress"
+      try {
+        const sendRes = await fetch(`/api/campaigns/${created.id}/send`, { method: 'POST' })
+        const sendData = await sendRes.json()
+        if (!sendRes.ok) throw new Error(sendData.error || 'Send failed')
+        const sent = sendData.campaign || { ...created, status: 'completed', leads: sendData.total || 0 }
+        onCreate(sent)
+        toast({
+          title: `Campaign sent to ${sendData.sent || 0} customer${sendData.sent === 1 ? '' : 's'}! 🚀`,
+          description: sendData.failed ? `${sendData.failed} failed` : undefined,
+          variant: sendData.failed ? 'warning' as any : 'success',
+        })
+      } catch (err: any) {
+        // Campaign was saved but send failed — show it as draft so user can retry
+        onCreate(created)
+        toast({ title: 'Campaign saved as draft', description: 'Send failed: ' + err.message, variant: 'error' })
+      } finally {
+        setGenerating(false)
+      }
     } else {
-      onClose()
+      onCreate(created)
+      toast({ title: 'Campaign scheduled', variant: 'success' })
     }
   }
 
@@ -453,17 +521,38 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
           {step === 'message' && (
             <>
               <div>
-                <label className="text-xs font-medium text-ink-600 mb-1.5 block">Message</label>
+                <label className="text-xs font-medium text-ink-600 mb-1.5 block">
+                  What's this campaign about?
+                </label>
+                <Input
+                  placeholder="e.g. recent hospital visit review, Diwali offer, monsoon checkup"
+                  value={form.topic}
+                  onChange={(e) => setForm({ ...form, topic: e.target.value })}
+                />
+                <p className="text-xs text-ink-500 mt-1">
+                  Be specific. The AI uses this to write a personal, contextual message — not a generic template.
+                </p>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-medium text-ink-600 block">Message</label>
+                  {aiAvailable === false && (
+                    <span className="text-[10px] text-amber-700">⚠️ AI not configured — add key in Settings</span>
+                  )}
+                </div>
                 <textarea
                   className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm min-h-[150px]"
                   value={form.messageBody}
                   onChange={(e) => setForm({ ...form, messageBody: e.target.value })}
-                  placeholder="Write your message in Hinglish, Hindi, or English..."
+                  placeholder="Write your message in Hinglish, Hindi, or English — or click 'Generate with AI' below."
                 />
-                <Button size="sm" variant="outline" onClick={generateMessage} disabled={generating} className="mt-2">
+                <Button size="sm" variant="outline" onClick={generateMessage} disabled={generating || !form.topic} className="mt-2">
                   {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                   {generating ? 'Generating...' : 'Generate with AI'}
                 </Button>
+                {!form.topic && (
+                  <p className="text-xs text-ink-500 mt-1">Add a topic above to enable AI generation</p>
+                )}
               </div>
               <div className="flex items-center gap-2 p-3 bg-ink-50 rounded-lg">
                 <input
@@ -562,7 +651,14 @@ function CampaignCreateModal({ onClose, onCreate }: { onClose: () => void; onCre
               setStep(steps[idx + 1])
             }}>Next</Button>
           ) : (
-            <Button variant="brand" onClick={save}><Send className="w-4 h-4" />{form.scheduledFor ? 'Schedule' : 'Save as draft'}</Button>
+            <Button variant="brand" onClick={save} disabled={generating}>
+              {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {generating
+                ? 'Sending…'
+                : form.scheduledFor
+                  ? 'Schedule for later'
+                  : 'Send now'}
+            </Button>
           )}
         </div>
       </div>
