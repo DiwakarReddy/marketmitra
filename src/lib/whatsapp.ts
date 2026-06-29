@@ -44,65 +44,52 @@ export async function sendWhatsAppMessage(
   params: SendMessageParams,
   context?: SendMessageContext
 ): Promise<SendMessageResult> {
+  // Multi-tenant: resolve creds from DB once, pass them through the call chain
+  // (DO NOT mutate process.env — that's a race condition across concurrent
+  // requests in serverless / multi-tenant scenarios).
   let provider: string = ''
-  let useMock = false
+  let resolvedCreds: Record<string, any> = {}
+  let resolvedConfig: Record<string, any> = {}
 
   if (context?.businessId) {
-    // Multi-tenant: resolve creds from DB
     const { resolveChannel } = await import('./channel-resolver')
     const channel = await resolveChannel(context.businessId, 'whatsapp')
-
     if (channel) {
       provider = channel.provider || 'meta'
-      // Set env vars for the inner functions to read
-      if (provider === 'meta') {
-        process.env.WHATSAPP_PROVIDER = 'meta'
-        process.env.WHATSAPP_ACCESS_TOKEN = channel.credentials.accessToken
-        process.env.WHATSAPP_PHONE_NUMBER_ID = channel.config.phoneNumberId
-      } else if (provider === 'aisensy' || provider === '360dialog') {
-        process.env.WHATSAPP_PROVIDER = provider
-        process.env.WHATSAPP_API_KEY = channel.credentials.accessToken
-      } else if (provider === 'twilio') {
-        process.env.WHATSAPP_PROVIDER = 'twilio'
-        process.env.TWILIO_ACCOUNT_SID = channel.credentials.accountSid
-        process.env.TWILIO_AUTH_TOKEN = channel.credentials.authToken
-        process.env.TWILIO_WHATSAPP_FROM = channel.config.phoneNumber || channel.credentials.whatsappFrom
-      }
-    } else {
-      useMock = true
+      resolvedCreds = channel.credentials || {}
+      resolvedConfig = channel.config || {}
     }
   } else {
-    // Fallback: env vars
+    // Single-tenant fallback: env vars
     provider = (process.env.WHATSAPP_PROVIDER || '') as string
-    if (!provider) useMock = true
   }
 
-  if (useMock) {
+  if (!provider) {
     return mockSend(params)
   }
 
-  // If provider is set but no credentials, fall back to mock
-  if (provider === 'meta' && (!process.env.WHATSAPP_ACCESS_TOKEN || !process.env.WHATSAPP_PHONE_NUMBER_ID)) {
+  // Credential checks (per provider, per resolution path)
+  if (provider === 'meta' && (!resolvedCreds.accessToken || !resolvedConfig.phoneNumberId)) {
     console.warn('[WhatsApp] META provider selected but credentials missing — falling back to mock')
     return mockSend(params)
   }
-  if ((provider === 'aisensy' || provider === '360dialog') && !process.env.WHATSAPP_API_KEY) {
+  if ((provider === 'aisensy' || provider === '360dialog') && !resolvedCreds.accessToken) {
     return mockSend(params)
   }
-  if (provider === 'twilio' && (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN)) {
+  if (provider === 'twilio' && (!resolvedCreds.accountSid || !resolvedCreds.authToken)) {
     return mockSend(params)
   }
 
   try {
     switch (provider) {
       case 'meta':
-        return await sendViaMeta(params)
+        return await sendViaMeta(params, resolvedCreds.accessToken, resolvedConfig.phoneNumberId)
       case 'aisensy':
-        return await sendViaAiSensy(params)
+        return await sendViaAiSensy(params, resolvedCreds.accessToken)
       case '360dialog':
-        return await sendVia360Dialog(params)
+        return await sendVia360Dialog(params, resolvedCreds.accessToken, resolvedConfig.templateNamespace)
       case 'twilio':
-        return await sendViaTwilio(params)
+        return await sendViaTwilio(params, resolvedCreds.accountSid, resolvedCreds.authToken, resolvedConfig.phoneNumber || resolvedCreds.whatsappFrom)
       default:
         return { success: false, error: `Unknown provider: ${provider}`, provider: 'mock' }
     }
@@ -134,9 +121,10 @@ export async function sendWhatsAppMessage(
 //   WHATSAPP_PHONE_NUMBER_ID="1234567890"
 //   WHATSAPP_BUSINESS_ACCOUNT_ID="9876543210"  (optional)
 
-async function sendViaMeta(params: SendMessageParams): Promise<SendMessageResult> {
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN!
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID!
+async function sendViaMeta(params: SendMessageParams, accessToken?: string, phoneNumberId?: string): Promise<SendMessageResult> {
+  if (!accessToken || !phoneNumberId) {
+    return { success: false, error: 'Meta credentials missing', provider: 'meta' }
+  }
   const apiVersion = process.env.WHATSAPP_API_VERSION || 'v18.0'
   const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
 
@@ -218,7 +206,10 @@ async function sendViaMeta(params: SendMessageParams): Promise<SendMessageResult
 //   WHATSAPP_PROVIDER="aisensy"
 //   WHATSAPP_API_KEY="your-aisensy-api-key"
 
-async function sendViaAiSensy(params: SendMessageParams): Promise<SendMessageResult> {
+async function sendViaAiSensy(params: SendMessageParams, apiKey?: string): Promise<SendMessageResult> {
+  if (!apiKey) {
+    return { success: false, error: 'AiSensy API key missing', provider: 'aisensy' }
+  }
   const url = process.env.WHATSAPP_API_URL || 'https://backend.aisensy.com/campaign/t1/api/v2'
   const to = params.to.replace(/\D/g, '')
 
@@ -226,7 +217,7 @@ async function sendViaAiSensy(params: SendMessageParams): Promise<SendMessageRes
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      apiKey: process.env.WHATSAPP_API_KEY,
+      apiKey,
       campaignName: params.templateName || 'marketmitra_msg',
       destination: to,
       userName: 'MarketMitra',
@@ -260,9 +251,13 @@ async function sendViaAiSensy(params: SendMessageParams): Promise<SendMessageRes
 //   WHATSAPP_PROVIDER="360dialog"
 //   WHATSAPP_API_KEY="your-360dialog-api-key"
 
-async function sendVia360Dialog(params: SendMessageParams): Promise<SendMessageResult> {
+async function sendVia360Dialog(params: SendMessageParams, apiKey?: string, templateNamespace?: string): Promise<SendMessageResult> {
+  if (!apiKey) {
+    return { success: false, error: '360dialog API key missing', provider: '360dialog' }
+  }
   const url = process.env.WHATSAPP_API_URL || 'https://waba.360dialog.io/v1/messages'
   const to = params.to.replace(/\D/g, '')
+  const namespace = templateNamespace || process.env.WHATSAPP_TEMPLATE_NAMESPACE
 
   let body: any
 
@@ -271,7 +266,7 @@ async function sendVia360Dialog(params: SendMessageParams): Promise<SendMessageR
       to,
       type: 'template',
       template: {
-        namespace: process.env.WHATSAPP_TEMPLATE_NAMESPACE,
+        namespace,
         name: params.templateName,
         language: { code: params.templateLanguage || 'en', policy: 'deterministic' },
         components: params.templateParams
@@ -295,7 +290,7 @@ async function sendVia360Dialog(params: SendMessageParams): Promise<SendMessageR
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'D360-API-KEY': process.env.WHATSAPP_API_KEY!,
+      'D360-API-KEY': apiKey,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
@@ -512,20 +507,17 @@ function normalizeTwilioInbound(payload: any): NormalizedInbound | null {
 // TWILIO WHATSAPP
 // ============================================================
 // Docs: https://www.twilio.com/docs/whatsapp/api
-async function sendViaTwilio(params: SendMessageParams): Promise<SendMessageResult> {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID
-  const authToken = process.env.TWILIO_AUTH_TOKEN
-  const fromNumber = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'
-
+async function sendViaTwilio(params: SendMessageParams, accountSid?: string, authToken?: string, fromNumber?: string): Promise<SendMessageResult> {
   if (!accountSid || !authToken) {
     return { success: false, error: 'Twilio credentials missing', provider: 'twilio' }
   }
 
+  const sender = fromNumber || process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'
   const to = params.to.replace(/\D/g, '')
   const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
 
   const formBody = new URLSearchParams()
-  formBody.append('From', fromNumber)
+  formBody.append('From', sender)
   formBody.append('To', `whatsapp:+${to}`)
   if (params.type === 'template' && params.templateName) {
     formBody.append('Body', params.templateParams?.join(' ') || '')
@@ -595,91 +587,17 @@ export async function sendInteractiveMessage(
   payload: InteractivePayload,
   context?: SendMessageContext
 ): Promise<SendMessageResult & { payloadId?: string }> {
-  // Currently Meta-only
+  // DEPRECATED: this was previously a no-op stub. The actual send now happens via
+  // sendInteractiveToNumber(to, payload, context). Keep this as a thin alias that
+  // surfaces a clear error so callers that didn't pass `to` get a useful message.
   if (!context?.businessId) {
     return { success: false, error: 'businessId required for interactive messages', provider: 'meta' }
   }
-
-  const { resolveChannel } = await import('./channel-resolver')
-  const channel = await resolveChannel(context.businessId, 'whatsapp')
-  if (!channel || channel.provider !== 'meta') {
-    return { success: false, error: 'Interactive messages require Meta Cloud API', provider: 'meta' }
-  }
-
-  const accessToken = channel.credentials.accessToken
-  const phoneNumberId = channel.config.phoneNumberId
-  if (!accessToken || !phoneNumberId) {
-    return { success: false, error: 'Missing WhatsApp credentials', provider: 'meta' }
-  }
-
-  const apiVersion = process.env.WHATSAPP_API_VERSION || 'v18.0'
-  const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
-
-  // For interactive messages we need the customer's phone — passed via the to
-  // We embed to into the payload by overriding from the caller via a thread param.
-  // We expose a separate API endpoint that takes `to` so we don't change this signature too much.
-
-  // Build Meta interactive body
-  let interactive: any
-  if (payload.type === 'button') {
-    if (!payload.buttons || payload.buttons.length === 0 || payload.buttons.length > 3) {
-      return { success: false, error: 'Button type requires 1-3 buttons', provider: 'meta' }
-    }
-    interactive = {
-      type: 'button',
-      body: { text: payload.bodyText.slice(0, 1024) },
-      action: {
-        buttons: payload.buttons.map((b) => ({
-          type: 'reply',
-          reply: { id: b.id, title: b.title.slice(0, 20) },
-        })),
-      },
-    }
-  } else if (payload.type === 'list') {
-    if (!payload.sections || payload.sections.length === 0) {
-      return { success: false, error: 'List type requires sections', provider: 'meta' }
-    }
-    interactive = {
-      type: 'list',
-      body: { text: payload.bodyText.slice(0, 1024) },
-      action: {
-        button: 'Choose',
-        sections: payload.sections.map((s) => ({
-          title: s.title?.slice(0, 24) || 'Options',
-          rows: s.rows.slice(0, 10).map((r) => ({
-            id: r.id,
-            title: r.title.slice(0, 24),
-            description: undefined,
-          })),
-        })),
-      },
-    }
-  } else if (payload.type === 'cta_url') {
-    interactive = {
-      type: 'cta_url',
-      body: { text: payload.bodyText.slice(0, 1024) },
-      action: {
-        name: 'cta_url',
-        parameters: { display_text: payload.ctaLabel?.slice(0, 20) || 'Open', url: payload.ctaUrl },
-      },
-    }
-  } else {
-    return { success: false, error: 'Unknown interactive type', provider: 'meta' }
-  }
-
-  if (payload.headerText) interactive.header = { type: 'text', text: payload.headerText.slice(0, 60) }
-  if (payload.footerText) interactive.footer = { text: payload.footerText.slice(0, 60) }
-
-  // Return the URL/method/payload — caller (booking API) sends with `to`
-  // We intentionally don't send here to keep the signature simple; the booking API
-  // calls the lower-level fetch itself.
-
   return {
-    success: true,
+    success: false,
+    error: 'sendInteractiveMessage() requires sendInteractiveToNumber() instead — pass a `to` phone number',
     provider: 'meta',
-    mocked: false,
-    // Note: caller must use sendInteractiveToNumber to actually send
-  } as any
+  }
 }
 
 /**

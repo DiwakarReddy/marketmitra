@@ -111,14 +111,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Business has no WhatsApp config' }, { status: 404 })
     }
 
-    // Step 3: Verify signature using THIS business's secret
+    // Step 3: Verify signature using THIS business's secret.
+    // Meta signs webhook payloads with the **app secret** (not the access token).
+    // We accept the per-tenant `webhookVerifyToken` field as a custom HMAC key
+    // for businesses that want their own signing key.
     if (signature && cfg.credentials) {
       try {
         const creds = await decryptJSON<Record<string, string>>(cfg.credentials, businessId)
-        const secret = creds.webhookVerifyToken || creds.accessToken?.slice(0, 32)
+        // For Meta: the app secret is the HMAC key. Fall back to webhookVerifyToken
+        // for non-Meta providers, and to the access token prefix only as a last resort
+        // (and only acceptable in dev).
+        const isMeta = (cfg.provider || 'meta') === 'meta'
+        const secret = isMeta
+          ? (process.env.META_APP_SECRET || creds.appSecret || creds.webhookVerifyToken)
+          : (creds.webhookVerifyToken || process.env.WHATSAPP_APP_SECRET)
 
         if (secret && process.env.NODE_ENV === 'production') {
-          // Per-tenant HMAC verification
           if (!verifyPerTenantSignature(rawBody, signature, secret)) {
             await audit({
               businessId, channel: 'whatsapp', action: 'test_failed',
@@ -222,12 +230,18 @@ async function processInboundMessage(businessId: string, inbound: any, provider:
       const serviceId = parts[1]
       const slotIso = parts.slice(2).join('_')  // ISO can contain colons
       try {
-        // Call our own confirm endpoint (in-process to avoid HTTP roundtrip)
         const customer = await prisma.customer.findUnique({
           where: { businessId_phone: { businessId, phone: inbound.phone } },
         })
         if (customer) {
-          await handleBookingConfirm(businessId, inbound.phone, slotIso, serviceId, customer.name)
+          await handleBookingConfirm(
+            businessId,
+            inbound.phone,
+            slotIso,
+            serviceId,
+            customer.name,
+            inbound.interactiveTitle || 'Booking confirmed'
+          )
           // Don't run AI for booking confirmations — they're handled directly
           return NextResponse.json({ ok: true, action: 'booked' })
         }
@@ -502,7 +516,8 @@ async function handleBookingConfirm(
   phone: string,
   slotIso: string,
   serviceId: string,
-  customerName: string
+  customerName: string,
+  interactiveTitle: string
 ) {
   const slotStart = new Date(slotIso)
   if (Number.isNaN(slotStart.getTime())) throw new Error('Invalid slotIso')
@@ -553,8 +568,15 @@ async function handleBookingConfirm(
     orderBy: { lastMessageAt: 'desc' },
   })
   if (conversation) {
+    // Save the actual button title the customer tapped (e.g. "10:30 AM"),
+    // not the customer name — that was the bug.
     await prisma.message.create({
-      data: { conversationId: conversation.id, direction: 'inbound', sender: 'customer', content: `Tapped: ${customerName}` },
+      data: {
+        conversationId: conversation.id,
+        direction: 'inbound',
+        sender: 'customer',
+        content: interactiveTitle || 'Booking confirmed',
+      },
     })
   }
 

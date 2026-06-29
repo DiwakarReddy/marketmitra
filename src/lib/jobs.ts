@@ -82,8 +82,31 @@ export async function executeCampaign(campaignId: string) {
   if (!campaign) return { sent: 0 }
 
   const business = campaign.business
-  const channels: string[] = JSON.parse(campaign.channels || '[]')
-  const audience = campaign.audience ? JSON.parse(campaign.audience) : {}
+  // campaign.channels is stored as a comma-separated string OR a JSON array
+  // (depending on the code path that created it). Normalize to a string[].
+  let channels: string[] = []
+  try {
+    const raw = campaign.channels
+    if (!raw) channels = ['whatsapp']
+    else if (raw.trim().startsWith('[')) channels = JSON.parse(raw)
+    else channels = raw.split(',').map((c) => c.trim()).filter(Boolean)
+  } catch {
+    channels = ['whatsapp']
+  }
+  // audience: stored as plain string ("all", "vip", "inactive", "new", "tag:foo")
+  // OR a JSON object — handle both. The new send API uses a plain string.
+  let audience: any = {}
+  if (campaign.audience) {
+    try {
+      if (campaign.audience.trim().startsWith('{')) {
+        audience = JSON.parse(campaign.audience)
+      } else {
+        audience = { preset: campaign.audience }
+      }
+    } catch {
+      audience = { preset: campaign.audience }
+    }
+  }
 
   // Determine target audience
   let targets = business.customers.filter((c) => !c.optedOut)
@@ -102,7 +125,7 @@ export async function executeCampaign(campaignId: string) {
   const errors: string[] = []
 
   // WhatsApp channel
-  if (channels.includes('whatsapp')) {
+  if (channels.includes('whatsapp') || channels.includes('all')) {
     for (const customer of targets) {
       const personalized = (campaign.messageBody || getReactivationMessage(
         business.vertical,
