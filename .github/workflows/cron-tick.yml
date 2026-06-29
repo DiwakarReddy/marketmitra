@@ -1,0 +1,42 @@
+# Per-minute scheduler for /api/cron/tick
+#
+# Vercel Hobby caps cron at once-per-day, which is too slow for the
+# per-minute work (drip sequences, no-show scoring, retry queue,
+# confirmation requests, scheduled campaigns). On Pro, you can move
+# this back to vercel.json with `"schedule": "* * * * *"` and delete
+# this workflow.
+#
+# The endpoint has an inFlight claim guard, so even if both Vercel
+# and this workflow fire, only one actually runs the work.
+#
+# Required GitHub repo secrets:
+#   - CRON_URL    : full https URL to /api/cron/tick on your deployment
+#                   e.g. https://marketmitra-eta.vercel.app/api/cron/tick
+#   - CRON_SECRET : the value of CRON_SECRET env var on Vercel.
+#                   Must match exactly — the endpoint rejects mismatches.
+
+name: cron-tick
+
+on:
+  schedule:
+    # Every minute. GitHub Actions cron supports this on all plans.
+    - cron: "* * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /api/cron/tick
+        run: |
+          set -euo pipefail
+          STATUS=$(curl -sS -o /tmp/tick.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.CRON_URL }}")
+          echo "HTTP $STATUS"
+          cat /tmp/tick.json || true
+          if [ "$STATUS" != "200" ]; then
+            echo "Tick failed (status $STATUS)" >&2
+            exit 1
+          fi

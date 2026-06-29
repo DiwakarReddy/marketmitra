@@ -161,7 +161,28 @@ curl -X GET "https://yourdomain.com/api/webhook/your-business-id/whatsapp?hub.mo
 
 # 4. Test cron (should return ok)
 curl -H "Authorization: Bearer YOUR_CRON_SECRET" https://yourdomain.com/api/cron/daily
+curl -H "Authorization: Bearer YOUR_CRON_SECRET" https://yourdomain.com/api/cron/tick
 ```
+
+### Per-minute scheduler (Vercel Hobby fix)
+
+Vercel Hobby caps cron at **once per day** — too slow for drips, no-show
+scoring, retry queue, confirmation requests, etc. Two options:
+
+**Option A — Vercel Pro ($20/mo):** add `"schedule": "* * * * *"` back to
+`vercel.json` under `/api/cron/tick` and delete `.github/workflows/cron-tick.yml`.
+
+**Option B — Stay on Hobby (default):** GitHub Actions cron drives the
+per-minute tick. Already wired up at `.github/workflows/cron-tick.yml`.
+You just need two GitHub repo secrets:
+
+| Secret      | Value                                                    |
+| ----------- | -------------------------------------------------------- |
+| `CRON_URL`  | `https://yourdomain.com/api/cron/tick`                   |
+| `CRON_SECRET` | the same value you set as `CRON_SECRET` on Vercel      |
+
+The endpoint has an `inFlight` claim guard, so even if both Vercel daily
+cron and GitHub Actions fire, no work is duplicated.
 
 ---
 
