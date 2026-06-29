@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { getPlan } from '@/lib/plans'
-import { createSubscription } from '@/lib/razorpay'
+import { createSubscription, getRazorpay } from '@/lib/razorpay'
 
 // POST /api/billing/change-plan
 // Self-serve plan upgrade/downgrade
@@ -36,31 +36,52 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Cancel old subscription if any
+  // Cancel old Razorpay subscription. The Razorpay SDK's TS types
+  // don't expose cancel_at_cycle_end cleanly across versions, so we
+  // call the underlying API with the raw option and fall back to
+  // immediate cancel if that fails.
   if (business.razorpaySubscriptionId) {
-    // In production: call razorpay.subscriptions.cancel(business.razorpaySubscriptionId)
-    console.log('[billing] Cancelling old subscription:', business.razorpaySubscriptionId)
+    const rz = getRazorpay()
+    if (rz) {
+      try {
+        // Try scheduled cancellation via PATCH (Razorpay REST API)
+        try {
+          const RazorpayAny = rz as any
+          await RazorpayAny.subscriptions.patch(business.razorpaySubscriptionId, {
+            cancel_at_cycle_end: true,
+          })
+          console.log(`[billing] scheduled cancellation of sub ${business.razorpaySubscriptionId} at end of cycle`)
+        } catch (updateErr: any) {
+          // Fallback: immediate cancel
+          await rz.subscriptions.cancel(business.razorpaySubscriptionId)
+          console.log(`[billing] immediately cancelled sub ${business.razorpaySubscriptionId}`)
+        }
+      } catch (err: any) {
+        console.error(`[billing] failed to cancel subscription ${business.razorpaySubscriptionId}:`, err.message)
+      }
+    }
   }
 
-  // Create new subscription (or update billing model)
+  // Apply plan changes
   const updates: any = {
     plan: plan.id,
     perBookingPaise: plan.perBookingPaise,
+    monthlyPricePaise: plan.monthlyPaise ?? 0,
   }
 
   if (plan.monthlyPaise) {
-    // Monthly plan via Razorpay
+    // Monthly plan: create new Razorpay subscription
     const sub = await createSubscription({
       customerId: business.razorpayCustomerId || business.id,
       planId: `plan_${plan.id}_monthly_${plan.monthlyPaise}`,
       totalCount: 12,
     })
-    updates.razorpaySubscriptionId = (sub as any).id
-    updates.monthlyPricePaise = plan.monthlyPaise
+    if (!(sub as any).mocked) {
+      updates.razorpaySubscriptionId = (sub as any).id
+    }
   } else {
     // Per-booking only — no fixed subscription
     updates.razorpaySubscriptionId = null
-    updates.monthlyPricePaise = 0
   }
 
   await prisma.business.update({

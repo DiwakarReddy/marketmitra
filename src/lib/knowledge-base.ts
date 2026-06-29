@@ -15,9 +15,15 @@
 import OpenAI from 'openai'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { prisma } from '@/lib/db'
-// pdf-parse: workaround for ESM default-export quirk
+// pdf-parse: handle both CJS and ESM imports gracefully.
+// The library is CJS but consumers may import as default or namespace.
+// In some Next.js versions, the namespace import returns a module with
+// the function under .default; in others it's the function itself.
 import * as pdfParseMod from 'pdf-parse'
-const pdfParse = (pdfParseMod as any).default || pdfParseMod
+const pdfParse: (buf: Buffer, opts?: any) => Promise<{ text: string; numpages: number }> =
+  typeof pdfParseMod === 'function'
+    ? pdfParseMod as any
+    : (pdfParseMod as any).pdf || (pdfParseMod as any).default || pdfParseMod
 
 const CHUNK_TARGET_CHARS = 500
 const CHUNK_OVERLAP_CHARS = 60

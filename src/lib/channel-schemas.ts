@@ -56,6 +56,45 @@ export const CHANNEL_SCHEMAS: Record<string, ChannelSchema> = {
     testInstructions: 'After connecting, configure voice webhook in Twilio console.',
   },
 
+  sms: {
+    channel: 'sms',
+    label: 'SMS',
+    icon: '💬',
+    description: 'Send SMS to customers who don\'t use WhatsApp. Supports Twilio, MSG91 (DLT for India), Plivo.',
+    providers: [
+      { value: 'twilio', label: 'Twilio (global, recommended for non-India)' },
+      { value: 'msg91', label: 'MSG91 (India, DLT templates supported)' },
+      { value: 'plivo', label: 'Plivo (global, cheaper for high volume)' },
+    ],
+    fields: [
+      { key: 'accountSid', label: 'Account SID / Auth ID', type: 'text', required: false, placeholder: 'ACxxx (Twilio) or Auth ID (Plivo)' },
+      { key: 'authToken', label: 'Auth Token (Twilio/Plivo)', type: 'password', required: false, helpText: 'Required for Twilio and Plivo' },
+      { key: 'fromNumber', label: 'From Number', type: 'tel', required: false, placeholder: '+14155551234', helpText: 'Required for Twilio/Plivo' },
+      { key: 'authKey', label: 'MSG91 Auth Key', type: 'password', required: false, helpText: 'Required for MSG91 — find in MSG91 dashboard' },
+      { key: 'senderId', label: 'MSG91 Sender ID (6-char alpha)', type: 'text', required: false, placeholder: 'MKTMSG', helpText: 'DLT-registered sender ID. Required for India.' },
+      { key: 'dltTemplateId', label: 'MSG91 DLT Template ID', type: 'text', required: false, placeholder: '1107161234567890123', helpText: 'Required for India DLT compliance' },
+    ],
+    testInstructions: 'After connecting, you can send SMS via campaigns, drips, and AI responses. For India, use MSG91 with DLT-registered template ID.',
+  },
+
+  email: {
+    channel: 'email',
+    label: 'Email',
+    icon: '📧',
+    description: 'Send emails for invoices, summaries, and customer outreach. Supports Resend and AWS SES.',
+    providers: [
+      { value: 'resend', label: 'Resend (recommended, best DX)' },
+      { value: 'ses', label: 'AWS SES (cheaper at scale)' },
+    ],
+    fields: [
+      { key: 'apiKey', label: 'Resend API Key', type: 'password', required: false, helpText: 'Required for Resend. Get from resend.com/api-keys' },
+      { key: 'fromAddress', label: 'From Address', type: 'text', required: false, placeholder: 'Your Business <hello@yourdomain.com>', helpText: 'Must be a verified domain in Resend/SES' },
+      { key: 'accessKeyId', label: 'AWS Access Key ID', type: 'text', required: false, helpText: 'Required for SES — has ses:SendEmail permission' },
+      { key: 'secretAccessKey', label: 'AWS Secret Access Key', type: 'password', required: false, helpText: 'Required for SES' },
+    ],
+    testInstructions: 'After connecting, you can send email via campaigns, drips, booking confirmations, and payment receipts.',
+  },
+
   instagram: {
     channel: 'instagram',
     label: 'Instagram',
@@ -127,6 +166,8 @@ export const CHANNEL_SCHEMAS: Record<string, ChannelSchema> = {
 
 export const CHANNEL_ORDER = [
   'whatsapp',
+  'sms',
+  'email',
   'voice',
   'instagram',
   'google_ads',

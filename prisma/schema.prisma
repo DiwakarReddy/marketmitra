@@ -245,6 +245,12 @@ model Conversation {
 
   @@index([businessId])
   @@index([customerId])
+  // Cursor-paginated inbox listing (most-frequent hot path)
+  @@index([businessId, lastMessageAt(sort: Desc), id(sort: Desc)])
+  // Status filter + sort by recency
+  @@index([businessId, status, lastMessageAt(sort: Desc)])
+  // Unread badge lookup
+  @@index([businessId, unreadCount])
 }
 
 model Message {
@@ -268,6 +274,10 @@ model Message {
   @@index([conversationId])
   @@index([externalId])
   @@index([conversationId, direction, createdAt])
+  // Webhook status updates match on externalId within a business — composite helps
+  @@index([externalId, conversationId])
+  // Delivery status dashboards filter by status
+  @@index([deliveryStatus, failedAt])
 }
 
 // ============ CAMPAIGNS & APPROVALS ============
@@ -413,23 +423,30 @@ model Activity {
 }
 
 model Invoice {
-  id                String    @id @default(cuid())
-  businessId        String
-  periodStart       DateTime
-  periodEnd         DateTime
-  bookings          Int       @default(0)
-  amountPaise       Int       @default(0)
-  status            String    @default("pending")
-  razorpayId        String?
-  razorpayInvoiceId String?
-  paidAt            DateTime?
-  pdfUrl            String?
-  createdAt         DateTime  @default(now())
+  id                     String    @id @default(cuid())
+  businessId             String
+  periodStart            DateTime
+  periodEnd              DateTime
+  bookings               Int       @default(0)
+  amountPaise            Int       @default(0)
+  status                 String    @default("pending") // pending, paid, failed, refunded
+  razorpayId             String?
+  razorpayInvoiceId      String?
+  razorpayOrderId        String?
+  razorpayPaymentLinkId  String?
+  razorpayPaymentId      String?
+  paymentLinkUrl         String?
+  paidAt                 DateTime?
+  pdfUrl                 String?
+  createdAt              DateTime  @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([businessId, status])
+  @@index([razorpayOrderId])
+  @@index([razorpayPaymentLinkId])
+  @@index([razorpayPaymentId])
 }
 
 model FailedMessage {

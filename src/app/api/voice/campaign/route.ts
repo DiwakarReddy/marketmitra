@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     campaignName,
     script,
     inactiveSinceDays: inactiveSinceDays || 90,
-    webhookUrl: baseUrl,
+    webhookBaseUrl: baseUrl,
   })
 
   return NextResponse.json({ ok: true, ...result })

@@ -31,6 +31,8 @@ export type Feature =
 
 export type ChannelKey =
   | 'whatsapp'
+  | 'sms'
+  | 'email'
   | 'voice'
   | 'instagram'
   | 'google_ads'
@@ -96,7 +98,7 @@ export const PLAN_FEATURES: Record<PlanTier, PlanFeatures> = {
     plan: 'starter',
     label: 'Starter',
     tagline: 'For solo practitioners just getting started',
-    channels: ['whatsapp', 'google_calendar', 'razorpay'],
+    channels: ['whatsapp', 'email', 'google_calendar', 'razorpay'],
     features: [
       'whatsapp_inbox',
       'whatsapp_broadcasts',
@@ -127,7 +129,7 @@ export const PLAN_FEATURES: Record<PlanTier, PlanFeatures> = {
     plan: 'growth',
     label: 'Growth',
     tagline: 'For growing clinics with steady customer flow',
-    channels: ['whatsapp', 'voice', 'instagram', 'google_ads', 'google_calendar', 'razorpay'],
+    channels: ['whatsapp', 'sms', 'email', 'voice', 'instagram', 'google_ads', 'google_calendar', 'razorpay'],
     features: [
       'whatsapp_inbox',
       'whatsapp_broadcasts',
@@ -163,7 +165,7 @@ export const PLAN_FEATURES: Record<PlanTier, PlanFeatures> = {
     plan: 'scale',
     label: 'Scale',
     tagline: 'For multi-location chains and high-volume businesses',
-    channels: ['whatsapp', 'voice', 'instagram', 'google_ads', 'google_calendar', 'razorpay'],
+    channels: ['whatsapp', 'sms', 'email', 'voice', 'instagram', 'google_ads', 'google_calendar', 'razorpay'],
     features: [
       'whatsapp_inbox',
       'whatsapp_broadcasts',
