@@ -5,10 +5,16 @@ export interface ChannelField {
   key: string
   label: string
   type: 'text' | 'password' | 'tel' | 'url'
-  required: boolean
+  /** Always required regardless of provider */
+  required?: boolean
+  /** Required only when one of these providers is selected. Overrides `required: false`. */
+  requiredProviders?: string[]
   placeholder?: string
   helpText?: string
 }
+
+/** Helper: required across all providers in a list. */
+const req = (providers: string[]): Pick<ChannelField, 'requiredProviders'> => ({ requiredProviders: providers })
 
 export interface ChannelSchema {
   channel: string
@@ -67,12 +73,12 @@ export const CHANNEL_SCHEMAS: Record<string, ChannelSchema> = {
       { value: 'plivo', label: 'Plivo (global, cheaper for high volume)' },
     ],
     fields: [
-      { key: 'accountSid', label: 'Account SID / Auth ID', type: 'text', required: false, placeholder: 'ACxxx (Twilio) or Auth ID (Plivo)' },
-      { key: 'authToken', label: 'Auth Token (Twilio/Plivo)', type: 'password', required: false, helpText: 'Required for Twilio and Plivo' },
-      { key: 'fromNumber', label: 'From Number', type: 'tel', required: false, placeholder: '+14155551234', helpText: 'Required for Twilio/Plivo' },
-      { key: 'authKey', label: 'MSG91 Auth Key', type: 'password', required: false, helpText: 'Required for MSG91 — find in MSG91 dashboard' },
-      { key: 'senderId', label: 'MSG91 Sender ID (6-char alpha)', type: 'text', required: false, placeholder: 'MKTMSG', helpText: 'DLT-registered sender ID. Required for India.' },
-      { key: 'dltTemplateId', label: 'MSG91 DLT Template ID', type: 'text', required: false, placeholder: '1107161234567890123', helpText: 'Required for India DLT compliance' },
+      { key: 'accountSid', label: 'Account SID / Auth ID', type: 'text', required: false, placeholder: 'ACxxx (Twilio) or Auth ID (Plivo)', ...req(['twilio', 'plivo']) },
+      { key: 'authToken', label: 'Auth Token (Twilio/Plivo)', type: 'password', required: false, helpText: 'Find in Twilio Console → Account → API keys & tokens (or Plivo Dashboard → Settings)', ...req(['twilio', 'plivo']) },
+      { key: 'fromNumber', label: 'From Number', type: 'tel', required: false, placeholder: '+14155551234', helpText: 'A Twilio/Plivo phone number you own', ...req(['twilio', 'plivo']) },
+      { key: 'authKey', label: 'MSG91 Auth Key', type: 'password', required: false, helpText: 'Find in MSG91 Dashboard → Settings → API', ...req(['msg91']) },
+      { key: 'senderId', label: 'MSG91 Sender ID (6-char alpha)', type: 'text', required: false, placeholder: 'MKTMSG', helpText: 'DLT-registered sender ID. Required for India.', ...req(['msg91']) },
+      { key: 'dltTemplateId', label: 'MSG91 DLT Template ID', type: 'text', required: false, placeholder: '1107161234567890123', helpText: 'Required for India DLT compliance. Find in MSG91 Dashboard → Templates → DLT.', ...req(['msg91']) },
     ],
     testInstructions: 'After connecting, you can send SMS via campaigns, drips, and AI responses. For India, use MSG91 with DLT-registered template ID.',
   },
@@ -87,12 +93,14 @@ export const CHANNEL_SCHEMAS: Record<string, ChannelSchema> = {
       { value: 'ses', label: 'AWS SES (cheaper at scale)' },
     ],
     fields: [
-      { key: 'apiKey', label: 'Resend API Key', type: 'password', required: false, helpText: 'Required for Resend. Get from resend.com/api-keys' },
-      { key: 'fromAddress', label: 'From Address', type: 'text', required: false, placeholder: 'Your Business <hello@yourdomain.com>', helpText: 'Must be a verified domain in Resend/SES' },
-      { key: 'accessKeyId', label: 'AWS Access Key ID', type: 'text', required: false, helpText: 'Required for SES — has ses:SendEmail permission' },
-      { key: 'secretAccessKey', label: 'AWS Secret Access Key', type: 'password', required: false, helpText: 'Required for SES' },
+      { key: 'apiKey', label: 'Resend API Key', type: 'password', required: false, helpText: 'Find at resend.com/api-keys', ...req(['resend']) },
+      { key: 'webhookSecret', label: 'Resend Webhook Secret (Svix)', type: 'password', required: false, helpText: 'Find in Resend Dashboard → Webhooks → select endpoint → Signing Secret. Required for inbound email + delivery status.', ...req(['resend']) },
+      { key: 'fromAddress', label: 'From Address', type: 'text', required: true, placeholder: 'Your Business <hello@yourdomain.com>', helpText: 'Must be a verified domain in Resend/SES' },
+      { key: 'accessKeyId', label: 'AWS Access Key ID', type: 'text', required: false, helpText: 'Required for SES — IAM user with ses:SendEmail permission', ...req(['ses']) },
+      { key: 'secretAccessKey', label: 'AWS Secret Access Key', type: 'password', required: false, helpText: 'Required for SES', ...req(['ses']) },
+      { key: 'region', label: 'AWS SES Region', type: 'text', required: false, placeholder: 'ap-south-1', helpText: 'Defaults to ap-south-1 (Mumbai) if blank', ...req(['ses']) },
     ],
-    testInstructions: 'After connecting, you can send email via campaigns, drips, booking confirmations, and payment receipts.',
+    testInstructions: 'After connecting, you can send email via campaigns, drips, booking confirmations, and payment receipts. For inbound email + delivery status, configure the Resend webhook to https://yourdomain.com/api/webhook/{businessId}/email.',
   },
 
   instagram: {

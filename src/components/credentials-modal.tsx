@@ -13,7 +13,7 @@ interface ChannelData {
   icon: string
   description: string
   providers?: { value: string; label: string }[]
-  fields: { key: string; label: string; type: string; required: boolean; placeholder?: string; helpText?: string }[]
+  fields: { key: string; label: string; type: string; required?: boolean; requiredProviders?: string[]; placeholder?: string; helpText?: string }[]
   testInstructions?: string
   connected: boolean
   provider?: string | null
@@ -21,6 +21,13 @@ interface ChannelData {
   hasCredentials: boolean
   lastTestStatus?: string
   lastTestError?: string
+}
+
+/** Is this field required for the currently-selected provider? */
+function fieldIsRequiredForProvider(field: ChannelData['fields'][number], provider: string): boolean {
+  if (field.required === true) return true
+  if (Array.isArray(field.requiredProviders) && field.requiredProviders.includes(provider)) return true
+  return false
 }
 
 export function CredentialsModal({
@@ -39,6 +46,7 @@ export function CredentialsModal({
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<string[]>([])
 
   useEffect(() => {
     // Load existing values (masked) for display
@@ -58,6 +66,20 @@ export function CredentialsModal({
   }
 
   const save = async (skipTest = false) => {
+    // Pre-flight client-side check so the user sees errors immediately.
+    const missing = channel.fields
+      .filter((f) => fieldIsRequiredForProvider(f, provider))
+      .filter((f) => {
+        const v = values[f.key]
+        return !v || (typeof v === 'string' && v.startsWith('•'))
+      })
+      .map((f) => `${f.label} is required for ${provider || 'this provider'}`)
+    if (missing.length > 0) {
+      setFieldErrors(missing)
+      return
+    }
+    setFieldErrors([])
+
     setSaving(true)
     try {
       const res = await fetch(`/api/channels/${channel.channel}`, {
@@ -73,6 +95,8 @@ export function CredentialsModal({
       if (!res.ok) {
         if (data.testFailed) {
           setTestResult({ ok: false, error: data.details || data.error })
+        } else if (data.details && Array.isArray(data.details)) {
+          setFieldErrors(data.details)
         } else {
           throw new Error(data.error || 'Save failed')
         }
@@ -141,12 +165,30 @@ export function CredentialsModal({
               <select
                 className="w-full h-10 rounded-lg border border-ink-200 px-3 text-sm bg-white"
                 value={provider}
-                onChange={(e) => setProvider(e.target.value)}
+                onChange={(e) => { setProvider(e.target.value); setFieldErrors([]); setTestResult(null) }}
               >
                 {channel.providers.map((p) => (
                   <option key={p.value} value={p.value}>{p.label}</option>
                 ))}
               </select>
+              <p className="text-xs text-ink-500 mt-1">
+                Required fields below are based on the selected provider.
+              </p>
+            </div>
+          )}
+
+{/* Inline validation errors */}
+          {fieldErrors.length > 0 && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start gap-2 text-red-900">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <div className="font-bold mb-1">Please fix the following:</div>
+                  <ul className="list-disc ml-4 space-y-0.5">
+                    {fieldErrors.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                </div>
+              </div>
             </div>
           )}
 
@@ -156,19 +198,31 @@ export function CredentialsModal({
             const isMasked = currentValue.startsWith('•')
             const isSecret = field.type === 'password'
             const show = showSecrets[field.key]
+            const required = fieldIsRequiredForProvider(field, provider)
+
+            // Hide fields that are not relevant to the selected provider entirely,
+            // so the form isn't a wall of confusing fields.
+            const isProviderSpecific = !!field.requiredProviders && !field.required
+            const showField = !isProviderSpecific || field.requiredProviders!.includes(provider)
+            if (!showField) return null
 
             return (
               <div key={field.key}>
                 <label className="text-xs font-medium text-ink-600 mb-1.5 block">
                   {field.label}
-                  {field.required && <span className="text-red-500 ml-1">*</span>}
+                  {required && <span className="text-red-500 ml-1">*</span>}
+                  {isProviderSpecific && (
+                    <span className="ml-2 text-[10px] uppercase tracking-wide text-ink-400">
+                      {provider}
+                    </span>
+                  )}
                 </label>
                 <div className="relative">
                   <Input
                     type={isSecret && !show && !isMasked ? 'password' : 'text'}
                     value={currentValue}
                     onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
-                    placeholder={isMasked ? '••••••••' : ''}
+                    placeholder={isMasked ? '••••••••' : (field.placeholder || '')}
                     className={isSecret && !isMasked ? 'pr-20' : ''}
                   />
                   {isSecret && !isMasked && (

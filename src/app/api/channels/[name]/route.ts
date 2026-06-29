@@ -96,25 +96,46 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
   const schema = getChannelSchema(params.name)
   if (!schema) return NextResponse.json({ error: 'Unknown channel' }, { status: 404 })
 
+  const existing = await prisma.channelConfig.findUnique({
+    where: { businessId_channel: { businessId, channel: params.name } },
+  })
+
   const body = await req.json()
   const { provider, values, skipTest } = body
 
-  // Validate
+  // Determine effective provider (use existing if not specified)
+  const effectiveProvider = provider || existing?.provider || schema.providers?.[0]?.value || ''
+
+  if (schema.providers && schema.providers.length > 0) {
+    const validProvider = schema.providers.find((p) => p.value === effectiveProvider)
+    if (!validProvider) {
+      return NextResponse.json({
+        error: 'Invalid provider',
+        details: `Select one of: ${schema.providers.map((p) => p.label).join(', ')}`,
+      }, { status: 400 })
+    }
+  }
+
+  // Validate — field is required if `required: true` OR `requiredProviders` includes the active provider.
+  // For updates, an existing masked value (•••) counts as "filled" so the user doesn't have to retype it.
   const errors: string[] = []
   for (const field of schema.fields) {
-    if (field.required && (!values || !values[field.key] || (typeof values[field.key] === 'string' && values[field.key].startsWith('•')))) {
-      errors.push(`${field.label} is required`)
+    const isAlwaysRequired = field.required === true
+    const isProviderRequired =
+      Array.isArray(field.requiredProviders) && field.requiredProviders.includes(effectiveProvider)
+    if (!isAlwaysRequired && !isProviderRequired) continue
+
+    const v = values?.[field.key]
+    const isFilled = v && !(typeof v === 'string' && v.startsWith('•'))
+    // If we're updating and there's already a stored value for this field, the masked
+    // placeholder is OK — the user is "keeping" the existing secret.
+    const hasExistingSecret = !!existing && field.type === 'password'
+    if (!isFilled && !hasExistingSecret) {
+      errors.push(`${field.label} is required for ${effectiveProvider || 'this channel'}`)
     }
   }
   if (errors.length > 0) {
     return NextResponse.json({ error: 'Validation failed', details: errors }, { status: 400 })
-  }
-
-  if (schema.providers && provider) {
-    const validProvider = schema.providers.find((p) => p.value === provider)
-    if (!validProvider) {
-      return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
-    }
   }
 
   // Test connection
@@ -152,11 +173,7 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
     }
   }
 
-  // Upsert
-  const existing = await prisma.channelConfig.findUnique({
-    where: { businessId_channel: { businessId, channel: params.name } },
-  })
-
+  // Upsert — `existing` already loaded earlier for provider-default + rotation detection
   const isNew = !existing
   const isRotation: boolean = !!existing && Object.keys(credentials).length > 0
 

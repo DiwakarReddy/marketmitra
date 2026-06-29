@@ -368,51 +368,87 @@ export async function generateTemplateWithAI(
   const lang = input.language || business.language || 'hinglish'
   const tone = input.tone || 'warm'
 
-  // System prompt — channel-aware
-  const channelRules: Record<TemplateChannel, string> = {
-    whatsapp: 'Max 600 characters. Use Hinglish naturally. End with a clear CTA (reply YES, call, book). Use 1-2 emojis max.',
-    sms: 'Max 160 characters (single SMS segment). Even shorter is better — every character costs money. One CTA. No emojis unless they add value.',
-    email: 'Subject line under 60 chars (gets cut off in inbox). HTML body with proper structure (h2, p, strong). One clear CTA button. Footer with unsubscribe-style link is OK.',
+  // Few-shot examples per channel — concrete, on-brand Hinglish so the model
+  // doesn't fall back to the lazy "नमस्ते {{name}}!" placeholder.
+  const examples: Record<TemplateChannel, string> = {
+    whatsapp: `Example (reactivation for dental):
+{
+  "name": "Inactive Customer Reactivation",
+  "description": "Win back customers who haven't visited in 90+ days with a 20% off offer",
+  "body": "🙏 नमस्ते {{name}} जी!\\n\\n{{business.name}} में आपकी last visit को करीब 3 महीने हो गए — आपकी smile हमें याद है! 😊\\n\\nइस हफ़्ते specially आपके लिए: cleaning + checkup पर 20% off. Slot limited हैं.\\n\\nBook करने के लिए 'YES' reply करें, या call करें: 022-XXXX-XXXX.\\n\\n— {{business.ownerName}}, {{business.name}}",
+  "variables": ["name", "business.name", "business.ownerName"]
+}`,
+    sms: `Example (appointment reminder):
+{
+  "name": "Appointment Reminder",
+  "description": "24-hour reminder before scheduled appointment",
+  "body": "{{business.name}}: {{name}} जी, कल {{appointment.date}} को आपका appointment है {{appointment.time}} बजे. Confirm करने के लिए 'Y' reply करें. — {{business.ownerName}}",
+  "variables": ["name", "business.name", "business.name", "appointment.date", "appointment.time", "business.ownerName"]
+}`,
+    email: `Example (post-visit follow-up):
+{
+  "name": "Post-Visit Follow-up",
+  "description": "Thank-you email 24 hours after a visit, asking for a Google review",
+  "emailSubject": "Thank you for visiting {{business.name}}, {{name}} 🙏",
+  "emailHtml": "<div style='font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;'><h2 style='color:#0f766e;'>Thank you, {{name}} जी!</h2><p>It was wonderful seeing you at {{business.name}} yesterday. We hope you're feeling great after your visit.</p><p>If you have a moment, a quick Google review really helps other customers find us:</p><p style='text-align:center;margin:24px 0;'><a href='https://g.page/r/{{business.name}}/review' style='display:inline-block;background:#0f766e;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;'>Leave a review →</a></p><p style='color:#64748b;font-size:14px;'>With warmth,<br><strong>{{business.ownerName}}</strong><br>{{business.name}}, {{business.city}}</p></div>",
+  "variables": ["name", "business.name", "business.name", "business.ownerName", "business.city"]
+}`,
   }
+
+  // Channel-aware rules with hard limits + concrete structure
+  const channelRules: Record<TemplateChannel, string> = {
+    whatsapp: `Write a WhatsApp message 280-500 characters. Use Hinglish naturally — real mix of Devanagari Hindi + English words, NOT a literal English translation. Lead with a personal greeting using {{name}}. Mention the business by name once. Include ONE specific value proposition (offer, reminder, benefit, urgency). End with a single clear CTA (reply YES / call now / book a slot / tap the link). Use 1-3 emojis sprinkled naturally (🙏, 😊, 🎉). DO NOT return just '<h2>नमस्ते {{name}}!</h2><p>purpose</p>' — write a real marketing message.`,
+    sms: `Write an SMS 140-160 characters (single segment). Plain text only, no HTML. One short greeting, one value prop, one CTA. Every character costs the customer money so be ruthlessly brief. No emojis unless absolutely needed.`,
+    email: `Write an email. Subject line 30-55 chars, under 60 to avoid inbox cutoff. Body 200-400 words of HTML using <div>, <h2>, <p>, <strong>, <a> tags. Inline styles only (no external CSS). One <h2> heading, 2-3 short paragraphs, one prominent CTA button with <a href style='background:#0f766e;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;'>...</a>. Sign off with owner name + business name + city. Use {{name}}, {{business.name}}, {{business.city}}, {{business.ownerName}} as tokens where they appear.`,
+  }
+
   const variablesHint = `
-Available variables (substituted at send time):
-  {{name}} - customer's first name
+Available variables (substituted at send time — keep them as-is in your output):
+  {{name}} - customer's first name (ALWAYS use this in greeting)
   {{customer.name}}, {{customer.phone}}, {{customer.email}}
-  {{customer.lastVisitAt}} - formatted date, e.g. "15 Jan 2025"
+  {{customer.lastVisitAt}} - formatted date like "15 Jan 2025"
   {{customer.totalVisits}} - number
   {{customer.birthday}}, {{customer.anniversary}} - formatted dates
   {{business.name}} - business name
   {{business.city}}, {{business.ownerName}} - location and owner
-  {{appointment.date}}, {{appointment.time}} - if the message is about a specific booking
+  {{appointment.date}}, {{appointment.time}}, {{appointment.datetime}} - booking context
   {{custom.<key>}} - any custom field defined for this business
 
-ALWAYS use {{tokens}} for values that vary per customer. Use literal text only for the parts that don't change.`
+For real marketing copy, use {{name}} in the greeting and at least one of {{business.name}} or {{business.ownerName}} in the signature/closing.`
 
-  const systemPrompt = `You are a marketing copywriter for ${business.name}, a ${business.vertical} business in ${business.city || 'India'}.
-The owner's name is ${business.ownerName}. You write in ${lang} (use Devanagari for Hindi, English for technical terms).
-Tone: ${tone}.
+  const systemPrompt = `You are an experienced Indian marketing copywriter for small businesses on WhatsApp, SMS, and Email.
 
+Client:
+- Business: ${business.name} (${business.vertical} in ${business.city || 'India'})
+- Owner: ${business.ownerName}
+- Language: ${lang} — write natural Hinglish mixing Devanagari Hindi + English, the way real Indian SMB customers speak. Not formal Hindi, not formal English. Example flavor: "नमस्ते रिया जी, आज booking confirm है 🙏"
+- Tone: ${tone}
+
+Channel rules:
 ${channelRules[input.channel]}
 
 ${variablesHint}
 
-Return ONLY a valid JSON object with these fields:
+Reference example for this channel (match this quality — DO NOT just copy it, but DO match the depth and structure):
+${examples[input.channel]}
+
+OUTPUT FORMAT — return ONLY a valid JSON object, no markdown fences, no commentary, no leading/trailing text:
 {
   "name": "short internal name, 2-5 words",
   "description": "what this template is for, 1 sentence",
-  ${input.channel === 'whatsapp' ? '"body": "the WhatsApp message with {{tokens}}",' : ''}
-  ${input.channel === 'sms' ? '"body": "the SMS message with {{tokens}}",' : ''}
-  ${input.channel === 'email' ? '"emailSubject": "subject line", "emailHtml": "HTML body with {{tokens}}",' : ''}
-  "variables": ["array", "of", "all", "tokens", "used"]
+  ${input.channel === 'whatsapp' ? '"body": "the full WhatsApp message with {{tokens}}",' : ''}
+  ${input.channel === 'sms' ? '"body": "the full SMS message with {{tokens}}",' : ''}
+  ${input.channel === 'email' ? '"emailSubject": "subject line 30-55 chars", "emailHtml": "<full HTML body with {{tokens}} inline-styled>",' : ''}
+  "variables": ["array", "of", "all", "tokens", "you", "used"]
 }`
 
   const userMessage = `Write a ${input.channel} template for: ${input.purpose}
 ${input.audience ? `Target audience: ${input.audience}` : ''}
 
-Return valid JSON only. No markdown. No explanation.`
+Remember: real marketing copy that sounds like a real Indian SMB owner wrote it, not a placeholder. Include {{name}} in greeting. Be specific about the offer/reminder. End with a clear CTA. Return JSON only — no markdown, no explanation.`
 
   const result = await guardedAICustom(input.businessId, systemPrompt, userMessage, {
-    cacheTtl: 300, // 5 min cache — same prompt = same template
+    cacheTtl: 600, // 10 min cache — same prompt + same business = same template
   })
 
   if (!result.text) {

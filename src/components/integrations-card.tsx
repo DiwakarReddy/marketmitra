@@ -125,6 +125,9 @@ export function IntegrationsCard({ onChange }: { onChange: () => void }) {
             <Shield className="w-3 h-3" />
             🔒 Credentials are AES-256-GCM encrypted + per-tenant isolated. Last-used + audit log tracked.
           </div>
+          <div className="text-xs text-ink-600 mt-2 p-2 bg-teal-50 border border-teal-100 rounded">
+            💡 Click <strong>Connect</strong> on any channel to enter credentials. Each modal shows only the fields required for the selected provider.
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {loading ? (
