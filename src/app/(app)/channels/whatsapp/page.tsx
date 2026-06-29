@@ -16,7 +16,7 @@ export default async function WhatsAppChannelPage() {
     return <div className="p-6">Please sign in</div>
   }
 
-  const [business, stats, recentMessages] = await Promise.all([
+  const [business, stats, recentMessages, whatsappCfg] = await Promise.all([
     prisma.business.findUnique({ where: { id: businessId } }),
     prisma.conversation.aggregate({
       where: { businessId },
@@ -28,7 +28,16 @@ export default async function WhatsAppChannelPage() {
       take: 10,
       include: { conversation: { include: { customer: true } } },
     }),
+    prisma.channelConfig.findUnique({
+      where: { businessId_channel: { businessId, channel: 'whatsapp' } },
+    }),
   ])
+
+  // Prefer per-tenant provider from channelConfig (set in Settings UI);
+  // fall back to env var only if no per-tenant config exists.
+  const providerDisplay = whatsappCfg?.isActive
+    ? whatsappCfg.provider || 'configured (provider not set)'
+    : (process.env.WHATSAPP_PROVIDER || 'mock (dev mode)')
 
   const totalMessages = await prisma.message.count({ where: { conversation: { businessId } } })
   const inboundMessages = await prisma.message.count({ where: { conversation: { businessId }, direction: 'inbound' } })
@@ -62,7 +71,7 @@ export default async function WhatsAppChannelPage() {
             </div>
             <div className="p-3 border border-ink-100 rounded-lg">
               <div className="text-xs text-ink-500">Provider</div>
-              <div className="font-medium text-ink-900">{process.env.WHATSAPP_PROVIDER || 'mock (dev mode)'}</div>
+              <div className="font-medium text-ink-900">{providerDisplay}</div>
             </div>
             <div className="p-3 border border-ink-100 rounded-lg">
               <div className="text-xs text-ink-500">Active conversations</div>

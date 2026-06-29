@@ -95,9 +95,9 @@ export async function GET() {
 
   try {
     const channel = await resolveChannel(businessId, 'whatsapp')
-    if (channel && channel.provider === 'meta' && channel.credentials?.accessToken && channel.config?.businessAccountId) {
+    if (channel && channel.provider === 'meta' && channel.credentials?.accessToken && channel.config?.whatsappBusinessId) {
       const accessToken = channel.credentials.accessToken
-      const wabaId = channel.config.businessAccountId
+      const wabaId = channel.config.whatsappBusinessId
       const apiVersion = process.env.WHATSAPP_API_VERSION || 'v18.0'
       const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/message_templates?fields=name,category,language,status,components&limit=250`
 

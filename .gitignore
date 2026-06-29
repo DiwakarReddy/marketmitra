@@ -14,3 +14,4 @@ coverage
 .vscode
 .idea
 .env*
+tsconfig.tsbuildinfo

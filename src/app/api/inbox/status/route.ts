@@ -30,7 +30,7 @@ export async function GET() {
       display = {
         phoneNumberId: cfg.phoneNumberId,
         phoneNumber: cfg.phoneNumber,
-        businessAccountId: cfg.businessAccountId,
+        whatsappBusinessId: cfg.whatsappBusinessId,
       }
     } catch {}
   }
