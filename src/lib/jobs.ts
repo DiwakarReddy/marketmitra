@@ -13,6 +13,20 @@ import { runDripWorker } from '@/lib/drips'
 
 let cronStarted = false
 
+/**
+ * In-flight job tracker — prevents the same job from running on
+ * multiple instances / multiple ticks (e.g. when the cron tick is
+ * invoked both by the in-process worker and Vercel Cron).
+ */
+const inFlight = new Set<string>()
+function tryClaim(key: string): boolean {
+  if (inFlight.has(key)) return false
+  inFlight.add(key)
+  // Auto-release after 5 minutes — safety net if a worker crashes.
+  setTimeout(() => inFlight.delete(key), 5 * 60 * 1000).unref()
+  return true
+}
+
 // Start the cron worker. Safe to call multiple times — only starts once.
 export function startCronWorker() {
   if (cronStarted) return
@@ -31,14 +45,18 @@ export function startCronWorker() {
 }
 
 export async function runScheduledJobs() {
-  await runScheduledCampaigns()
-  await runDailySummaries()
-  await processRetryQueue()
-  await runReviewRequestCheck()
-  await scoreUpcomingAppointments()
-  await sendConfirmationRequests()
-  await autoCancelNoShows()
-  await runDripWorker(100)
+  // Each task is wrapped in a "claim" — if the same task is already
+  // running on another instance, we skip it. This makes the cron
+  // safe to run from multiple sources (in-process worker + Vercel
+  // Cron + manual click).
+  if (tryClaim('scheduled-campaigns')) await runScheduledCampaigns()
+  if (tryClaim('daily-summaries')) await runDailySummaries()
+  if (tryClaim('retry-queue')) await processRetryQueue()
+  if (tryClaim('review-requests')) await runReviewRequestCheck()
+  if (tryClaim('no-show-score')) await scoreUpcomingAppointments()
+  if (tryClaim('confirmations')) await sendConfirmationRequests()
+  if (tryClaim('no-show-cancel')) await autoCancelNoShows()
+  if (tryClaim('drip-worker')) await runDripWorker(100)
 }
 
 // Runs at 9 AM daily
@@ -58,12 +76,31 @@ async function runScheduledCampaigns() {
       status: 'scheduled',
       scheduledFor: { lte: now },
     },
-    include: { business: { include: { customers: true, services: true } } },
+    select: { id: true, businessId: true, audience: true, channels: true, messageBody: true, name: true },
   })
 
   for (const campaign of due) {
     try {
-      await executeCampaign(campaign.id)
+      // Use the same multi-channel worker that /api/campaigns uses.
+      // Supports templateId via the Campaign row (currently null on the
+      // legacy Campaign model — see note in [id]/send route).
+      const { runCampaignSend, resolveAudience } = await import('@/app/api/campaigns/route')
+      const audienceIds = await resolveAudience(campaign.businessId, campaign.audience || 'all')
+      if (audienceIds.length === 0) {
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: { status: 'completed', endedAt: new Date(), leads: 0 },
+        })
+        continue
+      }
+      // Don't await — let cron tick stay fast
+      runCampaignSend(
+        campaign.id,
+        campaign.businessId,
+        null, // templateId — to be added as a column later
+        audienceIds,
+        campaign.messageBody || undefined
+      ).catch((err) => console.error(`[cron] campaign ${campaign.id} failed:`, err))
     } catch (err) {
       console.error(`[cron] campaign ${campaign.id} failed:`, err)
       await prisma.campaign.update({

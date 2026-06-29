@@ -73,6 +73,14 @@ export async function POST(req: NextRequest) {
         },
       })
 
+      // Fire drips that listen for 'new_customer' (or 'lead_captured') — best-effort
+      const { triggerDripsForEvent } = await import('@/lib/drips')
+      if (data._wasCreated) {
+        triggerDripsForEvent(businessId, 'new_customer', created.id).catch(() => null)
+      } else if (data.source === 'lead_captured' || data.source === 'lead') {
+        triggerDripsForEvent(businessId, 'lead_captured', created.id).catch(() => null)
+      }
+
       return NextResponse.json({ ok: true, customer: created, created: !data._exists })
     }
 

@@ -56,6 +56,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   // Full steps replacement if provided
   if (Array.isArray(body.steps)) {
+    // Verify any referenced templates exist
+    const tids = body.steps.filter((s: any) => s.templateId).map((s: any) => s.templateId)
+    if (tids.length) {
+      const found = await prisma.messageTemplate.count({
+        where: { id: { in: tids }, businessId },
+      })
+      if (found !== new Set(tids).size) {
+        return NextResponse.json({ error: 'One or more templateId values not found' }, { status: 400 })
+      }
+    }
+
     await prisma.$transaction([
       prisma.dripStep.deleteMany({ where: { sequenceId: params.id } }),
       prisma.dripStep.createMany({
@@ -68,6 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           templateLang: s.templateLang || 'en',
           templateParams: s.templateParams ? JSON.stringify(s.templateParams) : null,
           messageBody: s.messageBody || null,
+          templateId: s.templateId || null,
         })),
       }),
       prisma.dripSequence.update({ where: { id: params.id }, data: updates }),

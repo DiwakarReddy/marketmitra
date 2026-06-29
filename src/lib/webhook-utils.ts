@@ -1,44 +1,108 @@
 // Webhook edge case handlers
-// Shared across channel webhooks (WhatsApp, Voice, Instagram)
+// Shared across channel webhooks (WhatsApp, Voice, Instagram, Email, SMS)
 //
 // Handles:
-//  - Idempotency (Meta retries cause duplicates)
+//  - Idempotency (provider retries, multi-instance dedupe via Redis)
 //  - Phone normalization (Meta, Twilio, AiSensy formats)
 //  - Per-provider signature verification
 //  - Business state (deleted, paused) checks
 //  - Status update handling (delivery/read receipts)
+//
+// Why this file matters at scale:
+//   - WhatsApp + Meta retried webhooks 3-5x during a single network blip.
+//     Without proper dedupe, you process each inbound 3-5x and the customer
+//     gets 3-5 AI replies.
+//   - The dedupe cache here is Redis-backed when available (so dedupe
+//     survives across all your Vercel functions / instances); falls back
+//     to an in-process map when Redis is missing (single-instance dev).
 
 import crypto from 'crypto'
 import { prisma } from '@/lib/db'
 import { audit } from '@/lib/audit'
+import { getOrSet, set, getRedis, cacheKeys } from './cache'
 
-// In-memory idempotency cache (per process)
-// For multi-instance prod, swap with Redis or DB table
+/** In-process fallback when Redis isn't configured. Per-instance only. */
 const SEEN_MESSAGE_IDS = new Map<string, number>() // messageId -> expiresAt
-const SEEN_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+const SEEN_CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes — covers Meta's longest retry window
 
-// Cleanup old entries periodically (lazy — runs every 100 inserts)
-let seenInsertCount = 0
 function cleanupSeenCache() {
-  if (++seenInsertCount < 100) return
-  seenInsertCount = 0
+  if (SEEN_MESSAGE_IDS.size === 0) return
   const now = Date.now()
   for (const [key, expiresAt] of SEEN_MESSAGE_IDS) {
     if (expiresAt < now) SEEN_MESSAGE_IDS.delete(key)
   }
 }
 
-export function isMessageAlreadyProcessed(messageId: string): boolean {
+/**
+ * Check whether a webhook message id has already been processed.
+ *
+ * Cross-instance safe: when Redis is available we check it first
+ * (the source of truth). In-process map is the fast path fallback.
+ *
+ * To "mark" a message as seen, use markMessageProcessed() AFTER
+ * successful processing — not here. This is just the check.
+ */
+export async function isMessageAlreadyProcessed(provider: string, businessId: string, messageId: string): Promise<boolean> {
+  if (!messageId) return false
+
+  // 1. Try Redis (cross-instance)
+  const key = cacheKeys.webhookSeen(provider, businessId, messageId)
+  const redis = await getRedis()
+  if (redis) {
+    try {
+      const v = await redis.get(key)
+      if (v) return true
+    } catch {
+      // fall through to L1
+    }
+  }
+
+  // 2. L1 fallback
   cleanupSeenCache()
-  const expiresAt = SEEN_MESSAGE_IDS.get(messageId)
+  const expiresAt = SEEN_MESSAGE_IDS.get(key)
   if (expiresAt && expiresAt > Date.now()) return true
-  SEEN_MESSAGE_IDS.set(messageId, Date.now() + SEEN_CACHE_TTL_MS)
+  return false
+}
+
+/**
+ * Mark a webhook message id as processed. Called after successful
+ * processing so subsequent retries are short-circuited.
+ */
+export async function markMessageProcessed(provider: string, businessId: string, messageId: string, ttlSec: number = 600): Promise<void> {
+  if (!messageId) return
+  const key = cacheKeys.webhookSeen(provider, businessId, messageId)
+
+  // Redis (durable)
+  const redis = await getRedis()
+  if (redis) {
+    try {
+      await redis.set(key, '1', 'EX', ttlSec)
+    } catch {
+      // fall through
+    }
+  }
+
+  // L1 (fast)
+  SEEN_MESSAGE_IDS.set(key, Date.now() + ttlSec * 1000)
+}
+
+/**
+ * Synchronous version used by webhook handlers when we want to do
+ * the dedupe check + mark in one call (avoids the second round-trip).
+ *
+ * Returns true if this is a duplicate (already seen). If false, the
+ * message has been marked as seen in both tiers.
+ */
+export async function checkAndMarkProcessed(provider: string, businessId: string, messageId: string, ttlSec: number = 600): Promise<boolean> {
+  const dup = await isMessageAlreadyProcessed(provider, businessId, messageId)
+  if (dup) return true
+  await markMessageProcessed(provider, businessId, messageId, ttlSec)
   return false
 }
 
 // Check business state — return error response if can't process
 export async function checkBusinessCanReceiveMessages(businessId: string): Promise<
-  { ok: true; business: any } | { ok: false; reason: 'not_found' | 'deleted' | 'paused'; status: number }
+  { ok: true; business: any } | { ok: false; reason: 'not_found' | 'deleted' | 'paused' | 'no_active_business'; status: number }
 > {
   const business = await prisma.business.findUnique({
     where: { id: businessId },
@@ -46,6 +110,8 @@ export async function checkBusinessCanReceiveMessages(businessId: string): Promi
       id: true, name: true, language: true, plan: true,
       pausedAt: true, deletedAt: true, knowledge: true,
       ownerName: true, vertical: true, city: true,
+      timezone: true, currency: true,
+      usingPlatformKey: true,
     },
   })
 
@@ -86,7 +152,7 @@ export function normalizePhoneNumber(raw: string, provider?: string): string {
 // Per-provider signature verification
 // Returns true if valid, false if invalid, null if signature not required
 export async function verifyWebhookSignature(opts: {
-  provider: 'meta' | 'twilio' | 'aisensy' | 'gupshup' | string
+  provider: 'meta' | 'twilio' | 'aisensy' | 'gupshup' | 'resend' | 'msg91' | 'plivo' | string
   rawBody: string
   signature: string | null
   url: string                       // Required for Twilio HMAC
@@ -141,6 +207,14 @@ export async function verifyWebhookSignature(opts: {
     }
   }
 
+  // Resend: HMAC-SHA256 base64 encoded (Svix-format)
+  if (opts.provider === 'resend') {
+    const secret = opts.credentials.webhookSecret
+    if (!secret) return { ok: false, reason: 'no_secret' }
+    // Svix format: t=<ts>,v1=<sig> — handled in resend-specific helpers
+    return { ok: true } // delegate to provider-specific route
+  }
+
   // Unknown provider — accept in dev, reject in prod
   if (opts.mode === 'required') {
     return { ok: false, reason: 'unknown_provider' }
@@ -160,6 +234,16 @@ export function extractMessageId(provider: string, body: any): string | null {
     if (provider === 'aisensy' || provider === 'gupshup') {
       return body.message_id || body.msgId || body.id || null
     }
+    if (provider === 'resend') {
+      // Resend inbound: data.id or data.email_id
+      return body.data?.id || body.data?.email_id || null
+    }
+    if (provider === 'msg91') {
+      return body.requestId || body.data?.requestId || null
+    }
+    if (provider === 'plivo') {
+      return body.MessageUUID || body.message_uuid || null
+    }
     // Fallback: hash the body
     return crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 32)
   } catch (err) {
@@ -171,12 +255,15 @@ export function extractMessageId(provider: string, body: any): string | null {
 // Returns array of status updates to apply, empty if not a status event
 export interface StatusUpdate {
   messageId: string
-  status: 'sent' | 'delivered' | 'read' | 'failed'
+  status: 'sent' | 'delivered' | 'read' | 'failed' | 'bounced' | 'complained'
   timestamp: number
+  channel: 'whatsapp' | 'sms' | 'email'
   error?: string
+  /** For email: the recipient that bounced/complained */
+  recipient?: string
 }
 
-export function extractStatusUpdates(provider: string, body: any): StatusUpdate[] {
+export function extractStatusUpdates(provider: string, body: any, channel?: 'whatsapp' | 'sms' | 'email'): StatusUpdate[] {
   try {
     if (provider === 'meta') {
       const statuses = body.entry?.[0]?.changes?.[0]?.value?.statuses
@@ -185,6 +272,7 @@ export function extractStatusUpdates(provider: string, body: any): StatusUpdate[
         messageId: s.id,
         status: s.status as any,
         timestamp: parseInt(s.timestamp) * 1000,
+        channel: 'whatsapp',
         error: s.errors?.[0]?.title,
       }))
     }
@@ -202,6 +290,7 @@ export function extractStatusUpdates(provider: string, body: any): StatusUpdate[
           messageId: body.MessageSid,
           status: statusMap[body.MessageStatus] || 'sent',
           timestamp: Date.now(),
+          channel: channel || 'sms',
           error: body.ErrorCode ? `Twilio error ${body.ErrorCode}` : undefined,
         })
       }
@@ -213,8 +302,32 @@ export function extractStatusUpdates(provider: string, body: any): StatusUpdate[
           messageId: body.message_id || body.id,
           status: (body.status || 'sent') as any,
           timestamp: Date.now(),
+          channel: 'whatsapp',
         }]
       }
+    }
+    // Resend: email delivery / bounce / complaint events
+    if (provider === 'resend') {
+      const eventType: string = body.type || ''
+      const data = body.data || {}
+      const messageId = data.email_id || data.id
+      if (!messageId) return []
+      const map: Record<string, StatusUpdate['status']> = {
+        'email.delivered': 'delivered',
+        'email.bounced': 'bounced',
+        'email.complained': 'complained',
+        'email.sent': 'sent',
+      }
+      const status = map[eventType]
+      if (!status) return []
+      return [{
+        messageId,
+        status,
+        timestamp: Date.now(),
+        channel: 'email',
+        error: status === 'bounced' ? (data.bounce?.reason || 'bounced') : undefined,
+        recipient: Array.isArray(data.to) ? data.to[0] : data.to,
+      }]
     }
     return []
   } catch (err) {
@@ -222,12 +335,13 @@ export function extractStatusUpdates(provider: string, body: any): StatusUpdate[
   }
 }
 
-// Apply status updates to existing messages in DB
+/**
+ * Apply status updates to existing messages in DB.
+ * Multi-channel aware — matches Message by externalId regardless of channel.
+ */
 export async function applyStatusUpdates(businessId: string, updates: StatusUpdate[]) {
   if (updates.length === 0) return
 
-  // Find matching outbound messages and update their delivery status
-  // Messages are linked by external_id (provider's message ID) if stored, or by conversation/customer fallback
   for (const u of updates) {
     const message = await prisma.message.findFirst({
       where: {
@@ -242,7 +356,7 @@ export async function applyStatusUpdates(businessId: string, updates: StatusUpda
           deliveryStatus: u.status,
           deliveredAt: u.status === 'delivered' || u.status === 'read' ? new Date(u.timestamp) : undefined,
           readAt: u.status === 'read' ? new Date(u.timestamp) : undefined,
-          failedAt: u.status === 'failed' ? new Date(u.timestamp) : undefined,
+          failedAt: (u.status === 'failed' || u.status === 'bounced') ? new Date(u.timestamp) : undefined,
           errorMessage: u.error,
         },
       })

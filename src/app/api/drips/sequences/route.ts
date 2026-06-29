@@ -1,13 +1,22 @@
 // /api/drips/sequences
 //   GET  : list all drip sequences for business
-//   POST : create new sequence (with optional inline steps)
+//   POST : create new sequence (with inline steps)
+//   POST body supports:
+//     - templateName (WhatsApp Meta-approved) OR
+//     - templateId   (saved SMS/Email MessageTemplate) OR
+//     - messageBody  (freeform; only OK for transactional re-engagement)
+//
+//     - channel: 'whatsapp' | 'sms' | 'email' (default 'whatsapp')
+//     - delayHours: hours after previous step (or after enrollment)
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { applyRateLimit, RATE_LIMITS, rateLimitResponse } from '@/lib/rate-limit'
+import { applyRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { DRIP_TRIGGERS } from '@/lib/drips'
+
+const VALID_CHANNELS = ['whatsapp', 'sms', 'email']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -49,18 +58,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'at least one step required' }, { status: 400 })
   }
 
-  // Validate steps
+  // Validate steps + verify referenced templates exist
+  const templateIds = steps.filter((s: any) => s.templateId).map((s: any) => s.templateId)
+  let templateMap = new Map<string, any>()
+  if (templateIds.length) {
+    const tpls = await prisma.messageTemplate.findMany({
+      where: { id: { in: templateIds }, businessId },
+    })
+    templateMap = new Map(tpls.map((t) => [t.id, t]))
+  }
+
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i]
     if (typeof s.delayHours !== 'number' || s.delayHours < 0) {
       return NextResponse.json({ error: `step ${i + 1}: delayHours must be a non-negative number` }, { status: 400 })
     }
-    if (!s.templateName && !s.messageBody) {
-      return NextResponse.json({ error: `step ${i + 1}: either templateName or messageBody required` }, { status: 400 })
+    if (s.channel && !VALID_CHANNELS.includes(s.channel)) {
+      return NextResponse.json({ error: `step ${i + 1}: channel must be whatsapp, sms, or email` }, { status: 400 })
+    }
+    if (!s.templateName && !s.templateId && !s.messageBody) {
+      return NextResponse.json({ error: `step ${i + 1}: provide templateName, templateId, or messageBody` }, { status: 400 })
+    }
+    if (s.templateId && !templateMap.has(s.templateId)) {
+      return NextResponse.json({ error: `step ${i + 1}: templateId not found` }, { status: 400 })
     }
   }
 
-  // Create with steps in a transaction
   const sequence = await prisma.dripSequence.create({
     data: {
       businessId,
@@ -78,6 +101,7 @@ export async function POST(req: NextRequest) {
           templateLang: s.templateLang || 'en',
           templateParams: s.templateParams ? JSON.stringify(s.templateParams) : null,
           messageBody: s.messageBody || null,
+          templateId: s.templateId || null,
         })),
       },
     },

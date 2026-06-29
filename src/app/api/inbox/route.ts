@@ -30,10 +30,12 @@ export async function GET(req: NextRequest) {
   const view = searchParams.get('view') || 'all'
   const label = searchParams.get('label') || ''
   const cursor = searchParams.get('cursor') || null
+  const channel = searchParams.get('channel') || '' // 'whatsapp' | 'sms' | 'email' | '' (all)
   const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 200)
 
   const where: any = { businessId }
   if (status) where.status = status
+  if (channel) where.channel = channel
   if (search) {
     where.customer = {
       OR: [

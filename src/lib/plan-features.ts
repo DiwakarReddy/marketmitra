@@ -233,6 +233,20 @@ export function getPlanFeatures(plan: string): PlanFeatures {
   return PLAN_FEATURES[plan as PlanTier] || PLAN_FEATURES.starter
 }
 
+/**
+ * Cached plan-features lookup. Plan table is static so we can
+ * memoize aggressively (1h TTL). Used by the AI guard and the
+ * feature gate middleware.
+ */
+export async function getPlanFeaturesCached(plan: string): Promise<PlanFeatures> {
+  const { getOrSet } = await import('./cache')
+  return getOrSet(
+    `pf:${plan}`,
+    async () => getPlanFeatures(plan),
+    { ttl: 3600 }
+  )
+}
+
 // Check if a specific feature is enabled for the business's plan
 export function hasFeature(plan: string, feature: Feature): boolean {
   return getPlanFeatures(plan).features.includes(feature)

@@ -22,11 +22,17 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { generateAIReply } from '@/lib/ai'
 import { sendWhatsAppMessage, verifyWebhookSignature, normalizeInboundWebhook } from '@/lib/whatsapp'
 import { decryptJSON } from '@/lib/kms'
 import { audit } from '@/lib/audit'
-import { isMessageAlreadyProcessed, checkBusinessCanReceiveMessages, extractMessageId, extractStatusUpdates, applyStatusUpdates, sanitizeMessageText, logWebhookAttempt } from '@/lib/webhook-utils'
+import { checkAndMarkProcessed, checkBusinessCanReceiveMessages, extractMessageId, extractStatusUpdates, applyStatusUpdates, sanitizeMessageText, logWebhookAttempt } from '@/lib/webhook-utils'
+import { guardedAIReply } from '@/lib/ai-guard'
+
+// Thin wrapper so the call site reads naturally.
+async function guardedAIReplyWrapper(args: Parameters<typeof guardedAIReply>[0]): Promise<string> {
+  const result = await guardedAIReply(args)
+  return result.reply
+}
 
 // GET = webhook verification challenge
 // Meta sends this with mode=subscribe, verify_token, challenge
@@ -99,8 +105,11 @@ export async function POST(req: NextRequest) {
 
     // Step 1.6: Idempotency check
     const messageId = extractMessageId(provider as string || 'meta', body)
-    if (messageId && isMessageAlreadyProcessed(messageId)) {
-      return NextResponse.json({ ok: true, duplicate: true })
+    if (messageId) {
+      const dup = await checkAndMarkProcessed(provider as string || 'meta', businessId, messageId)
+      if (dup) {
+        return NextResponse.json({ ok: true, duplicate: true })
+      }
     }
 
     // Step 2: Load the business's WhatsApp config to get verify token
@@ -383,7 +392,20 @@ async function processInboundMessage(businessId: string, inbound: any, provider:
     take: 20,
   })
 
+  // Look up configured channels for AI channel awareness (cached)
+  const { resolveChannel } = await import('@/lib/channel-resolver')
+  const [waCh, smsCh, emailCh] = await Promise.all([
+    resolveChannel(businessId, 'whatsapp'),
+    resolveChannel(businessId, 'sms'),
+    resolveChannel(businessId, 'email'),
+  ])
+  const availableChannels: string[] = []
+  if (waCh) availableChannels.push('whatsapp')
+  if (smsCh) availableChannels.push('sms')
+  if (emailCh) availableChannels.push('email')
+
   const context = {
+    businessId,
     businessName: business.name,
     vertical: business.vertical,
     city: business.city,
@@ -404,6 +426,8 @@ async function processInboundMessage(businessId: string, inbound: any, provider:
     knowledge: business.knowledge || undefined,
     customerName: customer.name,
     customerPhone: customer.phone,
+    availableChannels,
+    inboundChannel: 'whatsapp' as const,
   }
 
   const conversationHistory = history
@@ -413,7 +437,12 @@ async function processInboundMessage(businessId: string, inbound: any, provider:
       content: m.content,
     }))
 
-  const aiReply = await generateAIReply(context, conversationHistory, inbound.message)
+  const aiReply = await guardedAIReplyWrapper({
+    businessId,
+    context,
+    history: conversationHistory,
+    userMessage: inbound.message,
+  })
 
   // Save AI message
   await prisma.message.create({

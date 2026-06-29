@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { sendOutbound } from '@/lib/messaging-bus'
 
 // GET /api/inbox/[id] - Get conversation + messages
 // PATCH /api/inbox/[id] - Update notes, labels, status, assignedTo
@@ -65,17 +66,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json({ ok: true, conversation: updated })
 }
 
+/**
+ * POST /api/inbox/[id]
+ *
+ * Owner-take-over: send a manual message. Routes through the messaging
+ * bus so the message goes via the SAME channel as the conversation
+ * (whatsapp | sms | email — email requires subject + html). This means
+ * an owner reply to an SMS thread is sent as SMS, not WhatsApp.
+ *
+ * Body:
+ *   - message: string (required for whatsapp/sms)
+ *   - subject, html: optional, required when conversation.channel === 'email'
+ */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
   if (!session?.user || !(session as any).businessId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const businessId = (session as any).businessId
-  const { message } = await req.json()
-
-  if (!message || !message.trim()) {
-    return NextResponse.json({ error: 'Message required' }, { status: 400 })
-  }
+  const body = await req.json()
+  const message = (body.message || '').toString()
 
   const conversation = await prisma.conversation.findUnique({
     where: { id: params.id },
@@ -85,20 +95,45 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // Send via WhatsApp
-  const { sendWhatsAppMessage } = await import('@/lib/whatsapp')
-  const result = await sendWhatsAppMessage({
-    to: conversation.customer.phone,
-    message,
-  }, { businessId: businessId })
+  const channel = (conversation.channel || 'whatsapp') as 'whatsapp' | 'sms' | 'email'
 
-  // Save message
+  if (channel === 'email') {
+    if (!body.subject || !body.html) {
+      return NextResponse.json({ error: 'Email replies require subject and html' }, { status: 400 })
+    }
+  } else if (!message.trim()) {
+    return NextResponse.json({ error: 'Message required' }, { status: 400 })
+  }
+
+  // Send via the messaging bus — picks the right provider for the channel
+  const result = await sendOutbound({
+    businessId,
+    customerId: conversation.customerId,
+    channels: [channel],
+    message: message,
+    subject: body.subject,
+    html: body.html,
+    text: message,
+    source: 'broadcast', // manual owner message — distinguish from ai replies
+    noRetry: false,
+  })
+
+  if (!result.sent) {
+    return NextResponse.json({
+      error: result.error || 'Send failed',
+      attempts: result.attempts,
+    }, { status: 502 })
+  }
+
+  // Persist the outbound message in the conversation
   const saved = await prisma.message.create({
     data: {
       conversationId: conversation.id,
       direction: 'outbound',
       sender: 'human',
-      content: message,
+      content: channel === 'email' ? (body.text || body.html || '') : message,
+      externalId: result.messageId,
+      deliveryStatus: 'sent',
     },
   })
 
@@ -108,5 +143,5 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     data: { lastMessageAt: new Date(), status: 'human_handling', aiActive: false },
   })
 
-  return NextResponse.json({ ok: result.success, message: saved })
+  return NextResponse.json({ ok: true, message: saved, sent: result })
 }

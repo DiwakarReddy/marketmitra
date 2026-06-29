@@ -7,7 +7,7 @@
 //
 // Handles: Meta Cloud API, AiSensy, Gupshup, Twilio WhatsApp
 // Edge cases covered:
-//  - Idempotency (Meta retries)
+//  - Idempotency (Meta retries) — cross-instance via Redis
 //  - Phone normalization (Meta/Twilio/AiSensy formats)
 //  - Per-provider signature verification
 //  - Status updates (delivery/read receipts)
@@ -20,7 +20,7 @@ import { generateAIReply } from '@/lib/ai'
 import { sendWhatsAppMessage, normalizeInboundWebhook } from '@/lib/whatsapp'
 import { decryptJSON } from '@/lib/kms'
 import {
-  isMessageAlreadyProcessed,
+  checkAndMarkProcessed,
   checkBusinessCanReceiveMessages,
   normalizePhoneNumber,
   verifyWebhookSignature,
@@ -30,6 +30,9 @@ import {
   sanitizeMessageText,
   logWebhookAttempt,
 } from '@/lib/webhook-utils'
+import { guardedAIReply } from '@/lib/ai-guard'
+import { applyRateLimit, RATE_LIMITS, rateLimitResponse } from '@/lib/rate-limit'
+import { invalidatePrefix } from '@/lib/cache'
 
 // GET = webhook verification challenge (Meta-compatible)
 export async function GET(
@@ -86,12 +89,14 @@ export async function POST(
   let provider = 'meta'
   let messageId: string | null = null
 
+  // Rate limit (IP-based) to prevent webhook flooding
+  const rl = applyRateLimit(req, businessId, 'api')
+  if (rl && !rl.allowed) return rateLimitResponse(rl)
+
   try {
     // Business state check FIRST (cheap, doesn't need body)
     const stateCheck = await checkBusinessCanReceiveMessages(businessId)
     if (!stateCheck.ok) {
-      // Log attempt even if we reject (for debugging)
-      // (can't extract messageId without parsing body, so just log generic)
       return NextResponse.json({ error: `business_${stateCheck.reason}` }, { status: stateCheck.status })
     }
 
@@ -162,12 +167,16 @@ export async function POST(
     }
 
     // Idempotency: skip if we've already processed this message ID
-    if (messageId && isMessageAlreadyProcessed(messageId)) {
-      await logWebhookAttempt({
-        businessId, channel: 'whatsapp', provider, messageId,
-        outcome: 'duplicate',
-      })
-      return NextResponse.json({ ok: true, duplicate: true })
+    // (cross-instance via Redis when available)
+    if (messageId) {
+      const dup = await checkAndMarkProcessed(provider, businessId, messageId)
+      if (dup) {
+        await logWebhookAttempt({
+          businessId, channel: 'whatsapp', provider, messageId,
+          outcome: 'duplicate',
+        })
+        return NextResponse.json({ ok: true, duplicate: true })
+      }
     }
 
     // Normalize phone
@@ -249,29 +258,40 @@ async function processInboundMessage(businessId: string, inbound: any, messageId
     },
   })
 
-  // Generate AI reply
+  // Stop any active drip enrollments — customer replied
+  const { stopAllEnrollments } = await import('@/lib/drips')
+  await stopAllEnrollments(customer.id, 'replied').catch(() => null)
+
+  // Generate AI reply (guarded: budget + rate-limit + concurrent + cost burst + cache)
   const history = await prisma.message.findMany({
     where: { conversationId: conversation.id }, orderBy: { createdAt: 'asc' }, take: 20,
   })
 
   const context = {
+    businessId,
     businessName: business.name,
     vertical: business.vertical,
     city: business.city,
     ownerName: business.ownerName,
     language: customer.language || business.language,
-    services: business.services.map((s) => ({ name: s.name, durationMin: s.durationMin, pricePaise: s.pricePaise })),
+    services: business.services.map((s) => ({ id: s.id, name: s.name, durationMin: s.durationMin, pricePaise: s.pricePaise })),
     hours: business.hours.map((h) => ({ dayOfWeek: h.dayOfWeek, openTime: h.openTime, closeTime: h.closeTime, closed: h.closed })),
     knowledge: business.knowledge || undefined,
     customerName: customer.name,
     customerPhone: customer.phone,
+    customerContext: customer.notes || undefined,
+    availableChannels: ['whatsapp'],
+    inboundChannel: 'whatsapp' as const,
   }
 
-  const aiReply = await generateAIReply(
+  const aiResult = await guardedAIReply({
+    businessId,
     context,
-    history.map((m) => ({ role: m.direction === 'inbound' ? 'customer' : 'assistant', content: m.content })),
-    inbound.message
-  )
+    history: history.map((m) => ({ role: m.direction === 'inbound' ? 'customer' as const : 'assistant' as const, content: m.content })),
+    userMessage: inbound.message,
+  })
+
+  const aiReply = aiResult.reply
 
   // Send first, then store the response (with the provider's message ID for status tracking)
   const sendResult = await sendWhatsAppMessage(
@@ -298,11 +318,32 @@ async function processInboundMessage(businessId: string, inbound: any, messageId
     await reliableSend({ businessId, customerId: customer.id, phone: inbound.phone, message: aiReply, type: 'text' })
   }
 
+  // Trigger drips (e.g. new_customer, lead_captured) — fire-and-forget
+  const { triggerDripsForEvent } = await import('@/lib/drips')
+  triggerDripsForEvent(businessId, 'lead_captured', customer.id).catch(() => null)
+
   await logWebhookAttempt({
     businessId, channel: 'whatsapp', provider: 'meta',
     messageId, outcome: 'processed',
-    metadata: { type: 'inbound_message', conversationId: conversation.id, customerId: customer.id, aiReplied: true },
+    metadata: {
+      type: 'inbound_message',
+      conversationId: conversation.id,
+      customerId: customer.id,
+      aiReplied: true,
+      aiCached: aiResult.cached,
+      aiUsage: aiResult.usageRecorded,
+    },
   })
 
-  return NextResponse.json({ ok: true, conversationId: conversation.id, aiReplied: true })
+  // Invalidate any cached inbox lists so the new conversation / message
+  // appears immediately in the owner's UI on next refresh.
+  await invalidatePrefix(`conv:${businessId}:`).catch(() => null)
+
+  return NextResponse.json({
+    ok: true,
+    conversationId: conversation.id,
+    messageId: outboundMessage.id,
+    aiReplied: true,
+    cached: aiResult.cached,
+  })
 }

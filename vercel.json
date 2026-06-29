@@ -24,12 +24,36 @@
       "maxDuration": 10,
       "memory": 512
     },
+    "src/app/api/webhook/[businessId]/email/route.ts": {
+      "maxDuration": 10,
+      "memory": 512
+    },
+    "src/app/api/webhook/[businessId]/sms/route.ts": {
+      "maxDuration": 10,
+      "memory": 512
+    },
     "src/app/api/whatsapp/webhook/route.ts": {
       "maxDuration": 10,
       "memory": 512
     },
     "src/app/api/ai/generate/route.ts": {
       "maxDuration": 30,
+      "memory": 1024
+    },
+    "src/app/api/ai/usage/route.ts": {
+      "maxDuration": 10,
+      "memory": 256
+    },
+    "src/app/api/templates/generate/route.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "src/app/api/templates/bulk-render/route.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "src/app/api/templates/bulk-send/route.ts": {
+      "maxDuration": 60,
       "memory": 1024
     },
     "src/app/api/cron/tick/route.ts": {

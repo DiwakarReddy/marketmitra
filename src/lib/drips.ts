@@ -182,18 +182,54 @@ export async function runDripWorker(limit = 100): Promise<{ processed: number; s
         messageBody = fillTemplate(messageBody, ctx)
       }
 
-      // Send
-      const result = await sendWhatsAppMessage(
-        {
-          to: enrollment.customer.phone,
-          message: messageBody,
-          type: step.templateName ? 'template' : 'text',
-          templateName: step.templateName || undefined,
-          templateParams: templateParams.length ? templateParams : undefined,
-          templateLanguage: step.templateLang || 'en',
-        },
-        { businessId: enrollment.businessId }
-      )
+      // If the step references a saved template, render it through the
+      // template engine (supports {{tokens}}, body, emailSubject, etc.).
+      let renderedBody = messageBody
+      let emailSubject: string | undefined
+      let emailHtml: string | undefined
+      if (step.templateId) {
+        try {
+          const { renderTemplateForCustomer, dbToTemplate } = await import('./templates')
+          const row = await prisma.messageTemplate.findUnique({ where: { id: step.templateId } })
+          if (row) {
+            const t = dbToTemplate(row)
+            const rendered = await renderTemplateForCustomer(t, enrollment.customerId)
+            if (t.channel === 'whatsapp') renderedBody = rendered.body || messageBody
+            if (t.channel === 'sms') renderedBody = rendered.smsBody || messageBody
+            if (t.channel === 'email') {
+              renderedBody = rendered.emailText || messageBody
+              emailSubject = rendered.emailSubject
+              emailHtml = rendered.emailHtml
+            }
+          }
+        } catch (err) {
+          console.warn(`[drip] template ${step.templateId} render failed:`, err)
+        }
+      }
+
+      // Route via the messaging bus — handles WhatsApp / SMS / Email +
+      // retry + delivery tracking. channel may be 'whatsapp' | 'sms' | 'email'
+      const channel = (step.channel || 'whatsapp') as 'whatsapp' | 'sms' | 'email'
+      const { sendOutbound } = await import('./messaging-bus')
+      const sendResult = await sendOutbound({
+        businessId: enrollment.businessId,
+        customerId: enrollment.customerId,
+        channels: [channel],
+        message: renderedBody,
+        subject: emailSubject,
+        html: emailHtml,
+        text: renderedBody,
+        source: 'drip',
+        templateName: step.templateName || undefined,
+        templateParams: templateParams.length ? templateParams : undefined,
+        templateLanguage: step.templateLang || 'en',
+        noRetry: false,
+      })
+      const result = {
+        success: sendResult.sent,
+        messageId: sendResult.messageId,
+        error: sendResult.error,
+      }
 
       if (result.success) {
         sent++

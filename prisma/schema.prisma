@@ -135,6 +135,7 @@ model Business {
   customFields        CustomField[]
   knowledgeSources    KnowledgeSource[]
   dripSequences       DripSequence[]
+  messageTemplates    MessageTemplate[]
   dripEnrollments     DripEnrollment[]
   ctwaCampaigns       CTWACampaign[]
 }
@@ -687,10 +688,81 @@ model DripStep {
   templateLang   String? // 'en' | 'hi'
   templateParams String? // JSON: ['{{customer.name}}', '{{customer.lastVisitAt}}', ...]
   messageBody    String? // free-form fallback if no template (only for re-engagement, not cold)
+  // For SMS/Email: reference a saved MessageTemplate by ID. The template
+  // engine substitutes {{tokens}} from the customer/business context.
+  templateId     String?
   createdAt      DateTime     @default(now())
 
   @@unique([sequenceId, position])
   @@index([sequenceId])
+  @@index([templateId])
+}
+
+// ============ MESSAGE TEMPLATES (per-business, multi-channel) ============
+//
+// Saved templates for WhatsApp (free-form), SMS (160 char max), Email
+// (subject + html). Each template has a set of declared {{variables}}
+// that the engine substitutes from the runtime context.
+//
+// Three categories:
+//   - marketing : campaigns, broadcasts, drip sequences (requires opt-in)
+//   - transactional : booking confirmation, payment receipt, reminder
+//   - system : internal notifications, status updates
+//
+// Variables supported (from buildTemplateContext in lib/template-context.ts):
+//   - {{name}}, {{phone}}, {{email}}
+//   - {{customer.*}} : name, phone, email, lastVisitAt, totalVisits, etc.
+//   - {{business.*}} : name, ownerName, city, language, currency
+//   - {{appointment.*}} : date, time, datetime, service
+//   - {{custom.<key>}} : values from custom-field definitions
+//
+// Template engine (lib/templates.ts) handles substitution, validation,
+// dry-run preview, and bulk rendering.
+model MessageTemplate {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  description String?
+  channel     String   // 'whatsapp' | 'sms' | 'email'
+  category    String   @default("marketing") // 'marketing' | 'transactional' | 'system'
+
+  // Channel-specific fields
+  // WhatsApp: body (free-form) + metaTemplateName (optional Meta-approved template)
+  body            String? // plain-text body with {{tokens}}
+  metaTemplateName String? // for outbound WhatsApp (Meta-approved)
+
+  // SMS
+  smsBody    String? // plain-text, will be truncated to 160 chars per segment
+
+  // Email
+  emailSubject String?
+  emailHtml    String? // HTML body with {{tokens}}
+  emailText    String? // optional plain-text alt
+
+  // Variables declared in the template. The engine validates that the
+  // runtime context provides all of these (or uses defaults).
+  // Stored as JSON: ['name', 'customer.lastVisitAt', 'business.city']
+  variables  String   @default("[]")
+
+  // For WhatsApp Meta templates: name, language, and parameter order.
+  // Stored as JSON: { name: 'booking_confirmation', language: 'hi',
+  //                   paramOrder: ['name', 'date', 'time'] }
+  metaTemplateConfig String?
+
+  // Usage stats — denormalized for fast dashboard reads
+  timesUsed   Int      @default(0)
+  lastUsedAt  DateTime?
+
+  status      String   @default("active") // 'active' | 'archived' | 'draft'
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([businessId, channel])
+  @@index([businessId, status])
+  @@index([businessId, category])
 }
 
 model DripEnrollment {

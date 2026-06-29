@@ -1,11 +1,15 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
-import { Send, AlertCircle, CheckCircle2, Sparkles, Search, Tag, StickyNote, Phone, Mail, Calendar, UserCircle, Loader2, ArrowLeft } from 'lucide-react'
+import {
+  Send, AlertCircle, CheckCircle2, Sparkles, Search, Tag, StickyNote,
+  Phone, Mail, Calendar, UserCircle, Loader2, ArrowLeft,
+  MessageSquare, Smartphone,
+} from 'lucide-react'
 
 interface Customer {
   id: string
@@ -23,10 +27,13 @@ interface Message {
   sender: string
   content: string
   createdAt: Date
+  deliveryStatus?: string | null
+  errorMessage?: string | null
 }
 
 interface Conversation {
   id: string
+  channel: 'whatsapp' | 'sms' | 'email'
   status: string
   lastMessageAt: Date
   aiActive: boolean
@@ -44,6 +51,12 @@ const STATUS_LABELS: Record<string, { label: string; bg: string; text: string }>
   needs_human: { label: 'Needs you', bg: 'bg-red-100', text: 'text-red-700' },
   resolved: { label: 'Resolved', bg: 'bg-ink-100', text: 'text-ink-700' },
   ai_replied: { label: 'AI replied', bg: 'bg-green-100', text: 'text-green-700' },
+}
+
+const CHANNEL_META: Record<Conversation['channel'], { label: string; icon: any; bg: string; text: string }> = {
+  whatsapp: { label: 'WhatsApp', icon: MessageSquare, bg: 'bg-green-50', text: 'text-green-700' },
+  sms: { label: 'SMS', icon: Smartphone, bg: 'bg-amber-50', text: 'text-amber-700' },
+  email: { label: 'Email', icon: Mail, bg: 'bg-blue-50', text: 'text-blue-700' },
 }
 
 const QUICK_REPLIES = [
@@ -69,6 +82,7 @@ export function InboxClient({
   const [counts, setCounts] = useState(initialCounts)
   const [selectedId, setSelectedId] = useState<string | null>(initialConversations[0]?.id || null)
   const [view, setView] = useState<'all' | 'unread' | 'today' | 'ai' | 'booked' | 'needs'>('all')
+  const [channelFilter, setChannelFilter] = useState<Conversation['channel'] | ''>('')
   const [search, setSearch] = useState('')
   const [activeConv, setActiveConv] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -81,6 +95,15 @@ export function InboxClient({
 
   const selected = conversations.find((c) => c.id === selectedId)
 
+  // Channel counts for the tab strip
+  const channelCounts = useMemo(() => {
+    const c = { whatsapp: 0, sms: 0, email: 0 }
+    for (const conv of conversations) {
+      c[conv.channel] = (c[conv.channel] || 0) + 1
+    }
+    return c
+  }, [conversations])
+
   // Filter conversations client-side
   const filtered = conversations.filter((c) => {
     if (search && !c.customer.name.toLowerCase().includes(search.toLowerCase()) && !c.customer.phone.includes(search)) return false
@@ -89,6 +112,7 @@ export function InboxClient({
     if (view === 'ai' && c.status !== 'ai_handling') return false
     if (view === 'booked' && c.status !== 'booked') return false
     if (view === 'needs' && c.status !== 'needs_human') return false
+    if (channelFilter && c.channel !== channelFilter) return false
     return true
   })
 
@@ -119,6 +143,7 @@ export function InboxClient({
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (view !== 'all') params.set('view', view)
+      if (channelFilter) params.set('channel', channelFilter)
       const res = await fetch(`/api/inbox?${params}`)
       const data = await res.json()
       if (data.conversations) {
@@ -127,7 +152,7 @@ export function InboxClient({
       }
     }, 5000)
     return () => clearInterval(interval)
-  }, [search, view])
+  }, [search, view, channelFilter])
 
   const sendMessage = async () => {
     if (!selectedId || !input.trim()) return
@@ -138,7 +163,10 @@ export function InboxClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: input }),
       })
-      if (!res.ok) throw new Error('Failed to send')
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to send')
+      }
       const newMsg: Message = {
         id: 'temp-' + Date.now(),
         direction: 'outbound',
@@ -222,9 +250,9 @@ export function InboxClient({
       <div className="px-6 lg:px-8 py-5 border-b border-ink-100 bg-white">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-ink-900">WhatsApp Inbox</h1>
+            <h1 className="text-2xl font-bold text-ink-900">Inbox</h1>
             <p className="text-sm text-ink-600 mt-0.5 flex items-center gap-1.5">
-              <span className="pulse-dot" /> AI is handling <span className="font-semibold text-ink-900">{counts.ai} active conversations</span> right now
+              <span className="pulse-dot" /> AI is handling <span className="font-semibold text-ink-900">{counts.ai} active conversations</span> across WhatsApp, SMS &amp; Email
             </p>
           </div>
         </div>
@@ -242,6 +270,29 @@ export function InboxClient({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+            </div>
+            <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-hide">
+              {[
+                { k: '', label: 'All', count: counts.all },
+                { k: 'whatsapp', label: 'WhatsApp', count: channelCounts.whatsapp, Icon: MessageSquare, color: 'text-green-700' },
+                { k: 'sms', label: 'SMS', count: channelCounts.sms, Icon: Smartphone, color: 'text-amber-700' },
+                { k: 'email', label: 'Email', count: channelCounts.email, Icon: Mail, color: 'text-blue-700' },
+              ].map((tab) => {
+                const active = channelFilter === (tab.k as any)
+                const Icon = (tab as any).Icon
+                return (
+                  <button
+                    key={tab.k || 'all'}
+                    onClick={() => setChannelFilter(tab.k as any)}
+                    className={`flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded-full whitespace-nowrap ${
+                      active ? 'bg-ink-900 text-white' : 'text-ink-600 hover:bg-ink-100'
+                    }`}
+                  >
+                    {Icon && <Icon className={`w-3 h-3 ${active ? '' : tab.color}`} />}
+                    {tab.label} ({tab.count})
+                  </button>
+                )
+              })}
             </div>
           </div>
           <div className="flex border-b border-ink-100 text-[11px] overflow-x-auto scrollbar-hide">
@@ -273,6 +324,8 @@ export function InboxClient({
               filtered.map((c) => {
                 const lastMsg = c.messages[0]?.content || ''
                 const st = STATUS_LABELS[c.status] || STATUS_LABELS.ai_handling
+                const chanMeta = CHANNEL_META[c.channel] || CHANNEL_META.whatsapp
+                const ChannelIcon = chanMeta.icon
                 const initials = c.customer.name.split(/\s|@/)[0].slice(0, 2).toUpperCase()
                 const colorIdx = c.id.charCodeAt(0) % 5
                 const colors = ['bg-pink-200 text-pink-700', 'bg-blue-200 text-blue-700', 'bg-purple-200 text-purple-700', 'bg-amber-200 text-amber-700', 'bg-green-200 text-green-700']
@@ -285,6 +338,9 @@ export function InboxClient({
                     <div className="flex items-start gap-3">
                       <div className="relative">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold flex-shrink-0 ${colors[colorIdx]}`}>{initials}</div>
+                        <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${chanMeta.bg} ${chanMeta.text} flex items-center justify-center ring-2 ring-white`}>
+                          <ChannelIcon className="w-2.5 h-2.5" />
+                        </div>
                         {c.unreadCount > 0 && (
                           <div className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
                             {c.unreadCount}
@@ -297,9 +353,12 @@ export function InboxClient({
                           <div className="text-[10px] text-ink-500 flex-shrink-0">{formatTime(c.lastMessageAt)}</div>
                         </div>
                         <div className="text-xs text-ink-600 truncate">{lastMsg}</div>
-                        <div className="mt-1.5 flex items-center gap-1">
+                        <div className="mt-1.5 flex items-center gap-1 flex-wrap">
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${st.bg} ${st.text}`}>
                             {st.label}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${chanMeta.bg} ${chanMeta.text}`}>
+                            {chanMeta.label}
                           </span>
                           {c.labels && c.labels.split(',').slice(0, 2).map((l) => (
                             <span key={l} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">#{l}</span>

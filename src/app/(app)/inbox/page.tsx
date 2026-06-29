@@ -15,38 +15,52 @@ export default async function InboxPage() {
     return <div className="p-6">Please sign in</div>
   }
 
-  // Check if WhatsApp is configured for this business
-  const waChannel = await resolveChannel(businessId, 'whatsapp').catch(() => null)
-  const whatsappConfigured = !!waChannel && !!waChannel.provider
+  // The inbox is shown if ANY channel is configured (WhatsApp, SMS, or Email).
+  // Previously it required WhatsApp, but email/SMS-only businesses still need
+  // to see and reply to their messages.
+  const [wa, sms, email] = await Promise.all([
+    resolveChannel(businessId, 'whatsapp').catch(() => null),
+    resolveChannel(businessId, 'sms').catch(() => null),
+    resolveChannel(businessId, 'email').catch(() => null),
+  ])
+  const anyChannel = !!(wa?.provider || sms?.provider || email?.provider)
 
-  if (!whatsappConfigured) {
+  if (!anyChannel) {
     return <InboxNotConfigured />
   }
 
-  const [conversations, counts] = await Promise.all([
+  // Pull conversations for ALL channels.
+  const [conversations, allCount, aiCount, bookedCount, needsCount, unreadCount, todayCount] = await Promise.all([
     prisma.conversation.findMany({
       where: { businessId },
       include: {
         customer: true,
         messages: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
-      orderBy: { lastMessageAt: 'desc' },
+      orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
       take: 200,
     }),
-    {
-      all: await prisma.conversation.count({ where: { businessId } }),
-      ai: await prisma.conversation.count({ where: { businessId, status: 'ai_handling' } }),
-      booked: await prisma.conversation.count({ where: { businessId, status: 'booked' } }),
-      needs: await prisma.conversation.count({ where: { businessId, status: 'needs_human' } }),
-      unread: await prisma.conversation.count({ where: { businessId, unreadCount: { gt: 0 } } }),
-      today: await prisma.conversation.count({
-        where: {
-          businessId,
-          lastMessageAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
-        },
-      }),
-    },
+    prisma.conversation.count({ where: { businessId } }),
+    prisma.conversation.count({ where: { businessId, status: 'ai_handling' } }),
+    prisma.conversation.count({ where: { businessId, status: 'booked' } }),
+    prisma.conversation.count({ where: { businessId, status: 'needs_human' } }),
+    prisma.conversation.count({ where: { businessId, unreadCount: { gt: 0 } } }),
+    prisma.conversation.count({
+      where: {
+        businessId,
+        lastMessageAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+      },
+    }),
   ])
+
+  const counts = {
+    all: allCount,
+    ai: aiCount,
+    booked: bookedCount,
+    needs: needsCount,
+    unread: unreadCount,
+    today: todayCount,
+  }
 
   return <InboxClient initialConversations={conversations as any} initialCounts={counts} />
 }

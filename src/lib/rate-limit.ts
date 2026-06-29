@@ -81,6 +81,7 @@ export const RATE_LIMITS = {
   knowledgeUpload:   { windowMs: 60 * 1000, max: 5 },
   dripCreate:        { windowMs: 60 * 1000, max: 10 },
   ctwaCreate:        { windowMs: 60 * 1000, max: 5 },
+  aiGenerate:        { windowMs: 60 * 1000, max: 20 }, // AI calls are expensive
 }
 
 // Helper to apply in an API route

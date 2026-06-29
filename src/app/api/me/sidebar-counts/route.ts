@@ -16,19 +16,26 @@ export async function GET() {
   const businessId = (session as any).businessId
 
   // Single query, multiple sub-aggregates. One connection, not four.
-  const rows = await prisma.$queryRaw<{ inbox: bigint; campaigns: bigint; approvals: bigint; failures: bigint }[]>`
+  const rows = await prisma.$queryRaw<{
+    inbox: bigint; campaigns: bigint; approvals: bigint; failures: bigint;
+    smsUnread: bigint; emailUnread: bigint;
+  }[]>`
     SELECT
-      (SELECT COUNT(*)::int FROM "Conversation" WHERE "businessId" = ${businessId} AND "unreadCount" > 0) AS inbox,
+      (SELECT COUNT(*)::int FROM "Conversation" WHERE "businessId" = ${businessId} AND "unreadCount" > 0 AND "channel" = 'whatsapp') AS inbox,
       (SELECT COUNT(*)::int FROM "Campaign"    WHERE "businessId" = ${businessId} AND "status" IN ('draft','scheduled')) AS campaigns,
       (SELECT COUNT(*)::int FROM "Approval"    WHERE "businessId" = ${businessId} AND "status" = 'pending') AS approvals,
-      (SELECT COUNT(*)::int FROM "FailedMessage" WHERE "businessId" = ${businessId} AND "status" = 'pending') AS failures
+      (SELECT COUNT(*)::int FROM "FailedMessage" WHERE "businessId" = ${businessId} AND "status" = 'pending') AS failures,
+      (SELECT COUNT(*)::int FROM "Conversation" WHERE "businessId" = ${businessId} AND "unreadCount" > 0 AND "channel" = 'sms') AS smsUnread,
+      (SELECT COUNT(*)::int FROM "Conversation" WHERE "businessId" = ${businessId} AND "unreadCount" > 0 AND "channel" = 'email') AS emailUnread
   `
 
-  const row = rows[0] || { inbox: 0n, campaigns: 0n, approvals: 0n, failures: 0n }
+  const row = rows[0] || { inbox: 0n, campaigns: 0n, approvals: 0n, failures: 0n, smsUnread: 0n, emailUnread: 0n }
   return NextResponse.json({
     inbox: Number(row.inbox) || 0,
     campaigns: Number(row.campaigns) || 0,
     approvals: Number(row.approvals) || 0,
     failures: Number(row.failures) || 0,
+    smsUnread: Number(row.smsUnread) || 0,
+    emailUnread: Number(row.emailUnread) || 0,
   })
 }
