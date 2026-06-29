@@ -30,8 +30,14 @@ export async function POST(req: NextRequest) {
   const data = await req.json()
   const { name, type, channels, audience, messageBody, budgetPaise, scheduledFor } = data
 
-  if (!name) {
-    return NextResponse.json({ error: 'Name required' }, { status: 400 })
+  if (!name?.trim()) {
+    return NextResponse.json({ error: 'Campaign name is required' }, { status: 400 })
+  }
+  if (!messageBody?.trim()) {
+    return NextResponse.json({ error: 'Message body is required — write a message or generate with AI' }, { status: 400 })
+  }
+  if (name.trim().length > 120) {
+    return NextResponse.json({ error: 'Campaign name too long (max 120 chars)' }, { status: 400 })
   }
 
   // Count audience

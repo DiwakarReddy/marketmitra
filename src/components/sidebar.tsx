@@ -28,6 +28,9 @@ import {
   AlertCircle,
   CalendarDays,
   Building2,
+  Mail,
+  ListChecks,
+  Smartphone,
 } from 'lucide-react'
 
 const mainNav = [
@@ -35,7 +38,9 @@ const mainNav = [
   { href: '/inbox', label: 'WhatsApp Inbox', icon: MessageSquare, badgeKey: 'inbox' as keyof SidebarCounts },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays, badgeKey: null },
   { href: '/campaigns', label: 'Campaigns', icon: Megaphone, badgeKey: 'campaigns' as keyof SidebarCounts },
+  { href: '/drips', label: 'Drip Sequences', icon: Mail, badgeKey: null },
   { href: '/customers', label: 'Customers', icon: Users, badgeKey: null },
+  { href: '/ctwa', label: 'WhatsApp Ads', icon: Target, badgeKey: null },
   { href: '/leads', label: 'Leads & Revenue', icon: BarChart3, badgeKey: null },
   { href: '/approvals', label: 'Approvals', icon: CheckCircle2, badgeKey: 'approvals' as keyof SidebarCounts, badgeColor: 'red' },
   { href: '/failures', label: 'Failed Messages', icon: AlertCircle, badgeKey: 'failures' as keyof SidebarCounts },
@@ -43,6 +48,7 @@ const mainNav = [
 
 const channelsNav = [
   { href: '/channels/whatsapp', label: 'WhatsApp', icon: MessageSquare, channelKey: 'whatsapp' },
+  { href: '/onboarding/whatsapp', label: 'WhatsApp Setup', icon: Smartphone, channelKey: null },
   { href: '/channels/voice', label: 'Voice AI', icon: Phone, badge: 'New', channelKey: 'voice' },
   { href: '/channels/instagram', label: 'Instagram', icon: Instagram, channelKey: 'instagram' },
   { href: '/channels/google', label: 'Google Ads', icon: Target, channelKey: 'google_ads' },
@@ -50,14 +56,15 @@ const channelsNav = [
 
 const accountNav = [
   { href: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
+  { href: '/customers/fields', label: 'Custom Fields', icon: ListChecks },
   { href: '/widget', label: 'Booking Widget', icon: Code },
   { href: '/templates', label: 'Templates', icon: FileText },
   { href: '/settings', label: 'Settings', icon: Settings },
   { href: '/billing', label: 'Billing', icon: Receipt },
 ]
 
-const mainNavLabels = ['nav.dashboard', 'nav.inbox', 'nav.calendar', 'nav.campaigns', 'nav.customers', 'nav.leads', 'nav.approvals', 'nav.failures']
-const accountNavLabels = ['nav.knowledge', 'nav.widget', 'nav.templates', 'nav.settings', 'nav.billing']
+const mainNavLabels = ['nav.dashboard', 'nav.inbox', 'nav.calendar', 'nav.campaigns', 'nav.drips', 'nav.customers', 'nav.ctwa', 'nav.leads', 'nav.approvals', 'nav.failures']
+const accountNavLabels = ['nav.knowledge', 'nav.customFields', 'nav.widget', 'nav.templates', 'nav.settings', 'nav.billing']
 
 interface SidebarCounts {
   inbox: number
@@ -154,7 +161,10 @@ export function Sidebar({
         {channelsNav.map((item) => {
           const Icon = item.icon
           const active = pathname === item.href
-          const allowed = canConnectChannel(userPlan || 'trial', item.channelKey as any)
+          // Items without a channelKey (like WhatsApp Setup) are always shown
+          const allowed = item.channelKey
+            ? canConnectChannel(userPlan || 'trial', item.channelKey as any)
+            : true
           if (!allowed) return null // Hide if not in plan
           return (
             <Link

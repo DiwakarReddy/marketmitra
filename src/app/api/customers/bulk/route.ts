@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { triggerDripsForEvent } from '@/lib/drips'
 
 // POST /api/customers/bulk
 // Bulk actions on multiple customers
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   let count = 0
+  const newlyTaggedIds: string[] = []
 
   if (action === 'delete') {
     const result = await prisma.customer.deleteMany({ where: { id: { in: validIds } } })
@@ -45,6 +47,7 @@ export async function POST(req: NextRequest) {
           data: { tags: current.join(',') },
         })
         count++
+        newlyTaggedIds.push(customer.id)
       }
     }
   } else if (action === 'untag' && value) {
@@ -64,6 +67,15 @@ export async function POST(req: NextRequest) {
     count = validIds.length
   } else {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+  }
+
+  // Fire tag_added drip trigger for each newly tagged customer (best-effort)
+  if (action === 'tag' && value && newlyTaggedIds.length > 0) {
+    for (const customerId of newlyTaggedIds) {
+      triggerDripsForEvent(businessId, 'tag_added', customerId, { tag: value }).catch((err) => {
+        console.error('[customer bulk] tag_added drip trigger failed:', err)
+      })
+    }
   }
 
   await prisma.activity.create({

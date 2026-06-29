@@ -92,7 +92,13 @@ export default async function WhatsAppChannelPage() {
                   <div className="text-amber-800 mt-1">
                     Connect via Meta Cloud API, AiSensy, or 360dialog. Required credentials must be set in your environment.
                   </div>
-                  <Link href="/settings" className="text-amber-700 underline mt-2 inline-block">Go to Settings →</Link>
+                  <div className="flex gap-3 mt-2">
+                    <Link href="/settings" className="text-amber-700 underline">Go to Settings →</Link>
+                    <span className="text-amber-400">•</span>
+                    <Link href="/onboarding/whatsapp" className="text-teal-700 underline font-semibold">
+                      Or set up Coexistence (keep your existing WhatsApp app) →
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
@@ -146,10 +152,11 @@ export default async function WhatsAppChannelPage() {
             <div className="font-medium text-sm">Templates</div>
             <div className="text-xs text-ink-500 mt-0.5">pre-approved</div>
           </Link>
-          <Link href="/automation" className="p-4 border border-ink-100 rounded-lg hover:bg-ink-50 transition text-center">
-            <Calendar className="w-8 h-8 text-amber-600 mx-auto mb-2" />
-            <div className="font-medium text-sm">Automations</div>
-            <div className="text-xs text-ink-500 mt-0.5">5 active flows</div>
+          <Link href="/onboarding/whatsapp" className="p-4 border border-teal-200 bg-teal-50/50 rounded-lg hover:bg-teal-50 transition text-center relative">
+            <Phone className="w-8 h-8 text-teal-600 mx-auto mb-2" />
+            <div className="font-medium text-sm">Coexistence Setup</div>
+            <div className="text-xs text-ink-500 mt-0.5">Keep your WhatsApp app</div>
+            <span className="absolute top-2 right-2 text-[9px] font-bold rounded px-1.5 py-0.5 bg-teal-600 text-white">Recommended</span>
           </Link>
         </CardContent>
       </Card>

@@ -368,6 +368,23 @@ Make it feel personal and conversational, not generic.`
   }
 
   const save = async () => {
+    // Final validation guard (server validates too, but fail fast with a clear message)
+    if (!form.name.trim()) {
+      toast({ title: 'Campaign name is required', variant: 'error' })
+      setStep('type')
+      return
+    }
+    if (!form.messageBody.trim()) {
+      toast({ title: 'Message is required — write something or generate with AI', variant: 'error' })
+      setStep('message')
+      return
+    }
+    if (!form.audience) {
+      toast({ title: 'Select an audience', variant: 'error' })
+      setStep('audience')
+      return
+    }
+
     const wantToSendNow = !form.scheduledFor
     const res = await fetch('/api/campaigns', {
       method: 'POST',
@@ -379,7 +396,8 @@ Make it feel personal and conversational, not generic.`
       }),
     })
     if (!res.ok) {
-      toast({ title: 'Could not save campaign', variant: 'error' })
+      const err = await res.json().catch(() => ({}))
+      toast({ title: err.error || 'Could not save campaign', variant: 'error' })
       return
     }
     const data = await res.json()
@@ -433,12 +451,18 @@ Make it feel personal and conversational, not generic.`
           {step === 'type' && (
             <>
               <div>
-                <label className="text-xs font-medium text-ink-600 mb-1.5 block">Campaign name</label>
+                <label className="text-xs font-medium text-ink-600 mb-1.5 block">
+                  Campaign name <span className="text-red-500">*</span>
+                </label>
                 <Input
                   placeholder="e.g. Diwali Smile Special"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className={!form.name.trim() ? 'border-ink-200' : ''}
                 />
+                {!form.name.trim() && (
+                  <p className="text-xs text-amber-600 mt-1">Required — pick something you'll recognize in the list.</p>
+                )}
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -535,17 +559,24 @@ Make it feel personal and conversational, not generic.`
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-medium text-ink-600 block">Message</label>
+                  <label className="text-xs font-medium text-ink-600 block">
+                    Message <span className="text-red-500">*</span>
+                  </label>
                   {aiAvailable === false && (
                     <span className="text-[10px] text-amber-700">⚠️ AI not configured — add key in Settings</span>
                   )}
                 </div>
                 <textarea
-                  className="w-full rounded-lg border border-ink-200 px-3 py-2 text-sm min-h-[150px]"
+                  className={`w-full rounded-lg border px-3 py-2 text-sm min-h-[150px] ${
+                    !form.messageBody.trim() ? 'border-ink-200' : 'border-ink-200'
+                  }`}
                   value={form.messageBody}
                   onChange={(e) => setForm({ ...form, messageBody: e.target.value })}
                   placeholder="Write your message in Hinglish, Hindi, or English — or click 'Generate with AI' below."
                 />
+                {!form.messageBody.trim() && (
+                  <p className="text-xs text-amber-600 mt-1">Required — write a message or use AI to generate one.</p>
+                )}
                 <Button size="sm" variant="outline" onClick={generateMessage} disabled={generating || !form.topic} className="mt-2">
                   {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                   {generating ? 'Generating...' : 'Generate with AI'}
@@ -646,6 +677,15 @@ Make it feel personal and conversational, not generic.`
           }}>Back</Button>
           {step !== 'schedule' ? (
             <Button variant="brand" onClick={() => {
+              // Validate before advancing
+              if (step === 'type' && !form.name.trim()) {
+                toast({ title: 'Enter a campaign name first', variant: 'error' })
+                return
+              }
+              if (step === 'message' && !form.messageBody.trim()) {
+                toast({ title: 'Write or generate a message first', variant: 'error' })
+                return
+              }
               const steps = ['type', 'message', 'audience', 'schedule'] as const
               const idx = steps.indexOf(step)
               setStep(steps[idx + 1])
