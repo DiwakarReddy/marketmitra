@@ -8,6 +8,7 @@ import { useLang } from '@/components/language-toggle'
 import { t } from '@/lib/i18n'
 import { BusinessCardClient } from '@/components/business-card-client'
 import { canConnectChannel } from '@/lib/plan-features'
+import { SUPPORTED_LANGUAGES } from '@/lib/i18n'
 import {
   LayoutDashboard,
   Megaphone,
@@ -31,6 +32,8 @@ import {
   Mail,
   ListChecks,
   Smartphone,
+  Languages,
+  ChevronDown,
 } from 'lucide-react'
 
 const mainNav = [
@@ -238,25 +241,29 @@ export function Sidebar({
 
 function LanguageToggle() {
   const { lang, setLang } = useLang()
-  const opts = [
-    { code: 'en', label: 'EN' },
-    { code: 'hi', label: 'हिं' },
-    { code: 'hinglish', label: 'Hi-EN' },
-  ]
+  const current = SUPPORTED_LANGUAGES.find((l) => l.code === lang) || SUPPORTED_LANGUAGES[0]
   return (
-    <div className="flex items-center bg-ink-100 rounded-lg p-0.5 text-xs font-semibold">
-      {opts.map((o) => (
-        <button
-          key={o.code}
-          onClick={() => setLang(o.code as any)}
-          className={cn(
-            'px-2 py-1 rounded transition',
-            lang === o.code ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500 hover:text-ink-700'
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <details className="relative group">
+      <summary className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-ink-50 cursor-pointer text-xs font-semibold text-ink-700 list-none">
+        <Languages className="w-3.5 h-3.5" />
+        <span>{current.native}</span>
+        <ChevronDown className="w-3 h-3 text-ink-400" />
+      </summary>
+      <div className="absolute bottom-full left-0 mb-1 w-44 bg-white border border-ink-200 rounded-lg shadow-lg py-1 z-50 max-h-72 overflow-y-auto">
+        {SUPPORTED_LANGUAGES.map((l) => (
+          <button
+            key={l.code}
+            onClick={(e) => { e.preventDefault(); setLang(l.code as any) }}
+            className={cn(
+              'w-full text-left px-3 py-1.5 text-xs hover:bg-ink-50 flex items-center justify-between',
+              lang === l.code ? 'bg-teal-50 text-teal-700 font-semibold' : 'text-ink-700'
+            )}
+          >
+            <span>{l.native}</span>
+            <span className="text-[10px] text-ink-400">{l.label}</span>
+          </button>
+        ))}
+      </div>
+    </details>
   )
 }

@@ -449,23 +449,14 @@ Remember: real marketing copy that sounds like a real Indian SMB owner wrote it,
 
   const result = await guardedAICustom(input.businessId, systemPrompt, userMessage, {
     cacheTtl: 600, // 10 min cache — same prompt + same business = same template
+    source: 'template_generate',
   })
 
   if (!result.text) {
-    // AI budget exceeded or failed — return a sensible default structure
-    return {
-      name: input.purpose.slice(0, 50),
-      description: input.purpose,
-      body: input.channel === 'whatsapp' || input.channel === 'sms'
-        ? `🙏 नमस्ते {{name}}! ${input.purpose}.`
-        : null,
-      smsBody: input.channel === 'sms' ? `Namaste {{name}}, ${input.purpose}.` : null,
-      emailSubject: input.channel === 'email' ? input.purpose : null,
-      emailHtml: input.channel === 'email'
-        ? `<h2>नमस्ते {{name}}!</h2><p>${input.purpose}</p>`
-        : null,
-      variables: ['name'],
-    }
+    // AI call returned empty — guard blocked, key missing, or provider error.
+    // Build a usable fallback so the user has SOMETHING to edit instead of
+    // staring at a blank page. Use the business context + their purpose.
+    return buildFallbackTemplate(input, business)
   }
 
   // Parse the AI response (it should be JSON)
@@ -505,6 +496,58 @@ Remember: real marketing copy that sounds like a real Indian SMB owner wrote it,
     out.emailHtml = parsed.emailHtml || null
   }
   return out
+}
+
+/** Build a useful fallback template when AI generation fails. We use the
+ *  business's actual context (vertical, owner name) so it's not the lazy
+ *  '<h2>नमस्ते {{name}}!</h2><p>purpose</p>' stub. */
+function buildFallbackTemplate(
+  input: GenerateTemplateInput,
+  business: { name: string; ownerName: string | null; city: string | null; vertical: string | null }
+): GeneratedTemplate {
+  const ownerName = business.ownerName || 'हमारी टीम'
+  const city = business.city || ''
+  const purpose = input.purpose
+
+  if (input.channel === 'whatsapp') {
+    return {
+      name: purpose.slice(0, 50),
+      description: purpose,
+      body: `🙏 नमस्ते {{name}} जी!\n\n${ownerName} की तरफ़ से आपके लिए एक special update.\n\n${purpose}.\n\nअधिक जानकारी के लिए 'YES' reply करें, या हमें call करें.\n\n— ${ownerName}, ${business.name}`,
+      smsBody: null,
+      emailSubject: null,
+      emailHtml: null,
+      variables: ['name', 'business.name', 'business.ownerName'],
+    }
+  }
+  if (input.channel === 'sms') {
+    return {
+      name: purpose.slice(0, 50),
+      description: purpose,
+      body: null,
+      smsBody: `${business.name}: {{name}} जी, ${purpose}. जवाब के लिए 'Y' भेजें. — ${ownerName}`,
+      emailSubject: null,
+      emailHtml: null,
+      variables: ['name', 'business.name', 'business.ownerName'],
+    }
+  }
+  // email
+  return {
+    name: purpose.slice(0, 50),
+    description: purpose,
+    body: null,
+    smsBody: null,
+    emailSubject: `${business.name} — ${purpose.slice(0, 40)}`,
+    emailHtml: `<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+<h2 style="color:#0f766e;margin-bottom:8px;">नमस्ते {{name}} जी,</h2>
+<p>${purpose}.</p>
+<p style="margin:24px 0;">
+  <a href="#" style="display:inline-block;background:#0f766e;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">अभी respond करें →</a>
+</p>
+<p style="color:#64748b;font-size:14px;">With warmth,<br/><strong>${ownerName}</strong><br/>${business.name}${city ? `, ${city}` : ''}</p>
+</div>`,
+    variables: ['name', 'business.name', 'business.ownerName', 'business.city'],
+  }
 }
 
 // ============================================================

@@ -125,6 +125,51 @@ export const PLAN_FEATURES: Record<PlanTier, PlanFeatures> = {
     perBookingPaise: 0,                // Already paying monthly
   },
 
+  enterprise: {
+    plan: 'enterprise',
+    label: 'Enterprise',
+    tagline: 'For brands, franchises, agencies — multi-tenant + custom AI',
+    channels: ['whatsapp', 'sms', 'email', 'voice', 'instagram', 'google_ads', 'google_calendar', 'razorpay'],
+    features: [
+      'whatsapp_inbox',
+      'whatsapp_broadcasts',
+      'whatsapp_automations',
+      'voice_ai',
+      'voice_ai_regional',
+      'instagram',
+      'google_ads',
+      'reactivation_ai',
+      'birthday_wishes',
+      'festival_campaigns',
+      'review_requests',
+      'recurring_appointments',
+      'no_show_prediction',
+      'multi_staff',
+      'multi_location',
+      'priority_support',
+      'sla',
+      'white_glove_onboarding',
+      'api_access',
+      'custom_domain',
+      'platform_ai_key',
+    ],
+    maxCustomers: null,
+    maxCampaignsPerMonth: null,
+    maxStaffSeats: 9999,
+    maxLocations: 9999,
+    aiMessagesIncluded: 999999,            // Effectively unlimited
+    aiMessageOveragePaise: 0,             // No overage on enterprise
+    platformKeySurchargePaise: 0,        // Custom contracts
+    dataRetentionDays: 3650,             // 10 years
+    hasPrioritySupport: true,
+    hasSLA: true,
+    hasWhiteGlove: true,
+    hasApiAccess: true,
+    hasMultiLocation: true,
+    monthlyPricePaise: null,
+    perBookingPaise: 10000,              // ₹100/booking (50% off)
+  },
+
   growth: {
     plan: 'growth',
     label: 'Growth',

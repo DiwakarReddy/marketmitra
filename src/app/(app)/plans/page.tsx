@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Check, Sparkles } from 'lucide-react'
+import { Check, Sparkles, Mail, ArrowRight } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
-import { PLANS, getPlan, type PlanTier } from '@/lib/plans'
+import { PLANS, FEATURE_MATRIX, getPlan, type PlanTier } from '@/lib/plans'
+
+const PLAN_ORDER: PlanTier[] = ['starter', 'growth', 'scale', 'enterprise']
 
 export default function PlansPage() {
   const [currentPlan, setCurrentPlan] = useState<PlanTier>('trial')
@@ -26,6 +28,10 @@ export default function PlansPage() {
   }, [])
 
   const changePlan = async (planId: PlanTier) => {
+    if (planId === 'enterprise') {
+      window.location.href = 'mailto:sales@marketmitra.com?subject=Enterprise%20plan%20inquiry'
+      return
+    }
     setChanging(planId)
     try {
       const res = await fetch('/api/billing/change-plan', {
@@ -48,28 +54,36 @@ export default function PlansPage() {
     }
   }
 
+  const valueFor = (feature: any, plan: PlanTier) => feature[plan]
+
   return (
-    <div className="max-w-6xl mx-auto p-6 lg:p-8 space-y-6">
+    <div className="max-w-7xl mx-auto p-6 lg:p-8 space-y-6">
       <div className="text-center">
         <h1 className="text-3xl font-bold text-ink-900">Choose your plan</h1>
         <p className="text-ink-600 mt-1">Upgrade or downgrade anytime. Pay only for what you use.</p>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-5">
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
         {PLANS.map((plan) => {
           const isCurrent = plan.id === currentPlan
           const isHighlighted = plan.highlighted
+          const isEnterprise = plan.id === 'enterprise'
           return (
             <Card
               key={plan.id}
-              className={`relative overflow-hidden ${isHighlighted ? 'border-2 border-teal-500 shadow-xl' : ''}`}
+              className={`relative overflow-hidden ${isHighlighted ? 'border-2 border-teal-500 shadow-xl' : isEnterprise ? 'border-2 border-purple-300 shadow-lg' : ''}`}
             >
               {isHighlighted && (
                 <div className="absolute -top-1 left-0 right-0 bg-gradient-to-r from-teal-600 to-teal-500 text-white text-center text-xs font-bold uppercase tracking-wider py-1.5">
                   ⭐ Most Popular
                 </div>
               )}
-              <CardContent className={`p-6 ${isHighlighted ? 'pt-10' : ''}`}>
+              {isEnterprise && (
+                <div className="absolute -top-1 left-0 right-0 bg-gradient-to-r from-purple-600 to-purple-500 text-white text-center text-xs font-bold uppercase tracking-wider py-1.5">
+                  🏢 For Brands &amp; Franchises
+                </div>
+              )}
+              <CardContent className={`p-6 ${isHighlighted || isEnterprise ? 'pt-10' : ''}`}>
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-1">
                     <h3 className="text-xl font-bold text-ink-900">{plan.name}</h3>
@@ -87,6 +101,13 @@ export default function PlansPage() {
                       </div>
                       <div className="text-sm text-ink-600 mt-1">+ ₹{(plan.perBookingPaise / 100).toFixed(0)} per booking</div>
                     </>
+                  ) : isEnterprise ? (
+                    <>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-4xl font-bold text-ink-900">Custom</span>
+                      </div>
+                      <div className="text-sm text-ink-600 mt-1">Volume contracts starting at ₹100/booking</div>
+                    </>
                   ) : (
                     <>
                       <div className="flex items-baseline gap-1">
@@ -98,7 +119,7 @@ export default function PlansPage() {
                   )}
                 </div>
 
-                <div className="space-y-2 mb-6">
+                <div className="space-y-2 mb-6 min-h-[180px]">
                   {plan.features.map((feature) => (
                     <div key={feature} className="flex items-start gap-2 text-sm text-ink-700">
                       <Check className="w-4 h-4 text-teal-600 flex-shrink-0 mt-0.5" />
@@ -108,7 +129,7 @@ export default function PlansPage() {
                 </div>
 
                 <Button
-                  variant={isHighlighted ? 'brand' : isCurrent ? 'outline' : 'outline'}
+                  variant={isHighlighted ? 'brand' : isEnterprise ? 'outline' : 'outline'}
                   className="w-full"
                   disabled={isCurrent || changing === plan.id}
                   onClick={() => changePlan(plan.id)}
@@ -117,16 +138,18 @@ export default function PlansPage() {
                     'Switching...'
                   ) : isCurrent ? (
                     'Current plan'
+                  ) : isEnterprise ? (
+                    <>
+                      <Mail className="w-4 h-4" /> Contact sales
+                    </>
+                  ) : plan.id === 'starter' ? (
+                    'Downgrade to Starter'
+                  ) : plan.id === 'growth' ? (
+                    'Switch to Growth'
                   ) : (
                     <>
-                      {plan.id === 'starter' && 'Downgrade to Starter'}
-                      {plan.id === 'growth' && 'Switch to Growth'}
-                      {plan.id === 'scale' && (
-                        <>
-                          <Sparkles className="w-4 h-4" />
-                          Upgrade to Scale
-                        </>
-                      )}
+                      <Sparkles className="w-4 h-4" />
+                      Upgrade to Scale
                     </>
                   )}
                 </Button>
@@ -145,61 +168,36 @@ export default function PlansPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-ink-200">
-                  <th className="text-left p-4 font-semibold">Feature</th>
+                  <th className="text-left p-4 font-semibold sticky left-0 bg-white">Feature</th>
                   {PLANS.map((p) => (
                     <th key={p.id} className="text-center p-4 font-semibold">{p.name}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {[
-                  {
-                    category: 'Channels',
-                    features: [
-                      { name: 'WhatsApp AI inbox', values: ['✓', '✓', '✓'] },
-                      { name: 'Reactivation broadcasts', values: ['✓', '✓', '✓'] },
-                      { name: 'Voice AI calls', values: ['—', '✓', '✓'] },
-                      { name: 'Instagram content', values: ['—', '✓', '✓'] },
-                      { name: 'Google Ads automation', values: ['—', '✓', '✓'] },
-                      { name: 'Email automation', values: ['—', '✓', '✓'] },
-                    ],
-                  },
-                  {
-                    category: 'Capacity',
-                    features: [
-                      { name: 'Customers', values: ['1,000', 'Unlimited', 'Unlimited'] },
-                      { name: 'Campaigns / month', values: ['20', 'Unlimited', 'Unlimited'] },
-                      { name: 'Team members', values: ['1', '5', 'Unlimited'] },
-                      { name: 'Locations', values: ['1', '1', 'Unlimited'] },
-                    ],
-                  },
-                  {
-                    category: 'Support',
-                    features: [
-                      { name: 'Email support', values: ['✓', '✓', '✓'] },
-                      { name: 'Priority support', values: ['—', '✓', '✓'] },
-                      { name: 'Dedicated success manager', values: ['—', '—', '✓'] },
-                      { name: 'SLA', values: ['48h', '24h', '4h'] },
-                    ],
-                  },
-                ].map((section) => (
-                  <>
-                    <tr key={section.category} className="bg-ink-50">
-                      <td colSpan={4} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-ink-500">
+                {FEATURE_MATRIX.map((section) => (
+                  <React.Fragment key={section.category}>
+                    <tr className="bg-ink-50">
+                      <td colSpan={PLANS.length + 1} className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-ink-500">
                         {section.category}
                       </td>
                     </tr>
                     {section.features.map((f) => (
                       <tr key={f.name} className="border-b border-ink-100">
-                        <td className="p-4">{f.name}</td>
-                        {f.values.map((v, idx) => (
-                          <td key={idx} className="text-center p-4 text-ink-600">
-                            {v === '✓' ? <Check className="w-4 h-4 text-teal-600 mx-auto" /> : v}
-                          </td>
-                        ))}
+                        <td className="p-4 sticky left-0 bg-white">{f.name}</td>
+                        {PLAN_ORDER.map((planId) => {
+                          const v = valueFor(f, planId)
+                          return (
+                            <td key={planId} className="text-center p-4 text-ink-600">
+                              {v === true ? <Check className="w-4 h-4 text-teal-600 mx-auto" /> :
+                                v === false ? <span className="text-ink-300">—</span> :
+                                <span className="font-medium">{String(v)}</span>}
+                            </td>
+                          )
+                        })}
                       </tr>
                     ))}
-                  </>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -226,3 +224,6 @@ export default function PlansPage() {
     </div>
   )
 }
+
+// Avoid React import warning — table needs a Fragment wrapper
+import React from 'react'

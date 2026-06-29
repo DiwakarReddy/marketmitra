@@ -4,8 +4,10 @@ import { authOptions } from '@/lib/auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Download, Receipt, IndianRupee, FileText, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
+import { Download, Receipt, FileText, AlertCircle, CheckCircle2, Clock, Zap, Sparkles, ArrowRight, KeyRound, Plug } from 'lucide-react'
 import Link from 'next/link'
+import { getPlanFeatures } from '@/lib/plan-features'
+import { resolveChannel } from '@/lib/channel-resolver'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,12 +19,10 @@ export default async function BillingPage() {
     return <div className="p-6">Please sign in</div>
   }
 
-  const [business, invoices, failedInvoices, periodBookings, periodRevenue] = await Promise.all([
+  const [business, invoices, failedInvoices] = await Promise.all([
     prisma.business.findUnique({ where: { id: businessId } }),
     prisma.invoice.findMany({ where: { businessId }, orderBy: { createdAt: 'desc' }, take: 24 }),
     prisma.invoice.findMany({ where: { businessId, status: 'failed' } }),
-    prisma.appointment.count({ where: { businessId, status: { in: ['booked', 'completed', 'visited'] }, createdAt: { gte: new Date(Date.now() - 30 * 86400000) } } }),
-    prisma.lead.aggregate({ where: { businessId, status: 'paid', lastTouchAt: { gte: new Date(Date.now() - 30 * 86400000) } }, _sum: { valuePaise: true } }),
   ])
 
   const currentPeriodStart = new Date()
@@ -39,8 +39,32 @@ export default async function BillingPage() {
 
   const currentOwed = (thisMonthBookings * (business?.perBookingPaise || 20000))
 
+  // AI quota — show usage + remaining for the current month
+  const planFeatures = getPlanFeatures(business?.plan || 'trial')
+  const aiIncluded = planFeatures.aiMessagesIncluded
+  const aiUsed = business?.aiMessagesThisMonth || 0
+  const aiRemaining = aiIncluded === null ? Infinity : Math.max(0, aiIncluded - aiUsed)
+  const aiPercent = aiIncluded === null ? 0 : Math.min(100, Math.round((aiUsed / aiIncluded) * 100))
+
+  // Which channels are connected?
+  const connectedChannelConfigs = await prisma.channelConfig.findMany({
+    where: { businessId, isActive: true },
+    select: { channel: true, provider: true },
+  })
+  const connectedChannels = new Set(connectedChannelConfigs.map((c) => c.channel))
+
+  // Does the business have its own AI key configured?
+  const [openai, gemini] = await Promise.all([
+    resolveChannel(businessId, 'openai'),
+    resolveChannel(businessId, 'google_ai'),
+  ])
+  const hasOwnAiKey = !!openai?.credentials?.apiKey || !!gemini?.credentials?.apiKey
+
   const isSuspended = business?.plan === 'suspended'
   const hasFailedPayments = failedInvoices.length > 0
+
+  const planLabel = planFeatures.label
+  const isUnlimitedAi = aiIncluded === null
 
   return (
     <div className="max-w-5xl mx-auto p-6 lg:p-8 space-y-6">
@@ -70,14 +94,15 @@ export default async function BillingPage() {
       {/* Current plan + usage */}
       <Card>
         <CardHeader>
-          <CardTitle>Current plan</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-teal-600" />
+            Current plan
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <Badge variant={business?.plan === 'starter' ? 'secondary' : 'default'} className="mb-2">
-                {business?.plan?.toUpperCase()}
-              </Badge>
+              <Badge variant="default" className="mb-2">{planLabel.toUpperCase()}</Badge>
               <div className="text-2xl font-bold">
                 ₹{((business?.perBookingPaise || 20000) / 100).toFixed(0)} <span className="text-base text-ink-500 font-normal">/ booking</span>
               </div>
@@ -86,11 +111,133 @@ export default async function BillingPage() {
               ) : (
                 <div className="text-sm text-green-600 mt-1">✓ Pay per booking only</div>
               )}
+              {business?.plan === 'scale' && (
+                <div className="text-xs text-purple-700 mt-1">25% off per-booking rate</div>
+              )}
+              {business?.plan === 'enterprise' && (
+                <div className="text-xs text-purple-700 mt-1">50% off + unlimited AI + dedicated CSM</div>
+              )}
             </div>
             <div className="flex gap-2">
               <Button asChild variant="outline"><Link href="/plans">Change plan</Link></Button>
               <Button asChild variant="outline"><Link href="/settings">Payment method</Link></Button>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* AI Quota + Bring Your Own Key prompt */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-500" />
+            AI usage this month
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <div className="text-2xl font-bold text-ink-900">
+              {aiUsed.toLocaleString('en-IN')}
+              <span className="text-base text-ink-500 font-normal">
+                {' '}/ {isUnlimitedAi ? 'Unlimited' : aiIncluded.toLocaleString('en-IN')} messages
+              </span>
+            </div>
+            {!isUnlimitedAi && aiPercent > 80 && (
+              <Badge variant={aiPercent >= 100 ? 'danger' : 'warning'}>
+                {aiPercent >= 100 ? 'Limit reached' : `${aiPercent}% used`}
+              </Badge>
+            )}
+            {isUnlimitedAi && (
+              <Badge variant="success">Enterprise · No limits</Badge>
+            )}
+          </div>
+
+          {!isUnlimitedAi && (
+            <div className="w-full bg-ink-100 rounded-full h-2 overflow-hidden">
+              <div
+                className={`h-full transition-all ${
+                  aiPercent >= 100 ? 'bg-red-500' : aiPercent > 80 ? 'bg-amber-500' : 'bg-teal-600'
+                }`}
+                style={{ width: `${aiPercent}%` }}
+              />
+            </div>
+          )}
+
+          {aiPercent >= 80 && !hasOwnAiKey && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <KeyRound className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-semibold text-amber-900 text-sm">
+                    {aiPercent >= 100 ? 'AI budget reached' : 'Approaching your AI limit'}
+                  </div>
+                  <p className="text-xs text-amber-800 mt-1">
+                    Connect your own OpenAI or Google AI key — you pay them directly and we stop counting against your plan limit.
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <Button asChild size="sm" variant="brand">
+                      <Link href="/settings">Connect AI key <ArrowRight className="w-3 h-3 ml-1" /></Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/plans">Upgrade plan</Link>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {hasOwnAiKey && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2">
+              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-green-900">
+                <strong>Own AI key connected</strong> — AI calls bypass your plan limit (you're paying {openai?.credentials?.apiKey ? 'OpenAI' : 'Google AI'} directly).
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Connected channels */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Plug className="w-5 h-5 text-blue-600" />
+            Connected channels
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {(['whatsapp', 'sms', 'email', 'voice', 'instagram', 'google_ads', 'google_calendar', 'razorpay'] as const).map((ch) => {
+              const connected = connectedChannels.has(ch)
+              const inPlan = (planFeatures.channels as readonly string[]).includes(ch)
+              const labels: Record<string, string> = {
+                whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email', voice: 'Voice AI',
+                instagram: 'Instagram', google_ads: 'Google Ads', google_calendar: 'Google Calendar', razorpay: 'Razorpay',
+              }
+              return (
+                <div key={ch} className={`p-3 rounded-lg border ${connected ? 'border-green-200 bg-green-50/40' : 'border-ink-100'}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-semibold">{labels[ch]}</span>
+                    {connected ? (
+                      <CheckCircle2 className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <span className="text-[10px] text-ink-400">
+                        {inPlan ? 'Setup' : 'Upgrade'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-ink-500">
+                    {connected ? 'Connected' : inPlan ? 'Not connected' : 'Not in plan'}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button asChild variant="outline">
+              <Link href="/settings">Manage integrations <ArrowRight className="w-3 h-3 ml-1" /></Link>
+            </Button>
           </div>
         </CardContent>
       </Card>

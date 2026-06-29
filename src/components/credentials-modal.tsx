@@ -305,7 +305,7 @@ export function CredentialsModal({
 }
 
 function CredentialsHelp({ channel }: { channel: string }) {
-  const links: Record<string, { label: string; url: string; steps: string[] }> = {
+  const links: Record<string, { label: string; url: string; steps: string[]; providerNote?: string }> = {
     whatsapp: {
       label: 'Meta for Developers',
       url: 'https://developers.facebook.com/apps/',
@@ -325,6 +325,48 @@ function CredentialsHelp({ channel }: { channel: string }) {
         '2. Get a phone number with Voice capability',
         '3. Find Account SID and Auth Token on the dashboard',
         '4. Configure voice webhook in Phone Numbers → Configuration',
+      ],
+    },
+    sms: {
+      label: 'Choose your SMS provider',
+      url: 'https://www.twilio.com/',
+      providerNote: 'Switch providers in the dropdown above — each one has different setup steps.',
+      steps: [
+        'Twilio (global):',
+        '• Sign up at twilio.com → Console dashboard',
+        '• Copy Account SID + Auth Token',
+        '• Get a Twilio phone number → use as From Number',
+        '',
+        'MSG91 (India, DLT templates):',
+        '• Sign up at msg91.com → Dashboard → Settings → API',
+        '• Copy Auth Key',
+        '• Register a Sender ID at MSG91 → DLT Templates',
+        '• Get DLT Template ID for each template (TRAI compliance)',
+        '',
+        'Plivo (global, cheaper for high volume):',
+        '• Sign up at plivo.com → Dashboard',
+        '• Copy Auth ID + Auth Token',
+        '• Get a Plivo phone number as From Number',
+      ],
+    },
+    email: {
+      label: 'Choose your email provider',
+      url: 'https://resend.com/api-keys',
+      providerNote: 'Switch providers in the dropdown above — each one has different setup steps.',
+      steps: [
+        'Resend (recommended, best DX):',
+        '• Sign up at resend.com → API Keys',
+        '• Create an API key with full send access',
+        '• Verify your sending domain at resend.com/domains',
+        '• Use any verified email as From Address',
+        '• Set up webhook at resend.com/webhooks → paste URL: <code>https://yourdomain.com/api/webhook/&lt;businessId&gt;/email</code>',
+        '',
+        'AWS SES (cheaper at scale):',
+        '• Verify domain in SES Console',
+        '• Exit sandbox mode (request production access)',
+        '• Create IAM user with <code>ses:SendEmail</code> permission',
+        '• Copy Access Key ID + Secret Access Key',
+        '• Region defaults to ap-south-1 (Mumbai) — change if you use a different one',
       ],
     },
     instagram: {
@@ -373,18 +415,18 @@ function CredentialsHelp({ channel }: { channel: string }) {
       steps: [
         '1. Sign up at platform.openai.com',
         '2. Add payment method (min $5)',
-        '3. Create API key',
-        '4. Free tier: skip this and use platform key',
+        '3. Create API key (starts with sk-)',
+        '4. Skip this and use platform key if you\'re on Trial',
       ],
     },
     google_ai: {
       label: 'Google AI Studio',
       url: 'https://aistudio.google.com/app/apikey',
       steps: [
-        '1. Free tier available (no credit card)',
+        '1. Free tier available (no credit card needed)',
         '2. Click "Get API key"',
         '3. Copy the key',
-        '4. Free: 15 RPM, 1500 RPD',
+        '4. Free tier: 15 requests/min, 1500/day',
       ],
     },
   }
@@ -398,15 +440,16 @@ function CredentialsHelp({ channel }: { channel: string }) {
         <ExternalLink className="w-3 h-3" />
         Where do I get these credentials?
       </summary>
-      <div className="mt-2 p-3 bg-ink-50 rounded-lg space-y-1">
-        <a href={help.url} target="_blank" rel="noopener noreferrer" className="text-teal-600 underline block">
+      <div className="mt-2 p-3 bg-ink-50 rounded-lg space-y-2">
+        {help.providerNote && (
+          <p className="text-xs text-ink-600 italic">{help.providerNote}</p>
+        )}
+        <a href={help.url} target="_blank" rel="noopener noreferrer" className="text-teal-600 underline block text-xs">
           Open {help.label} →
         </a>
-        <ol className="mt-2 space-y-1 text-ink-700">
-          {help.steps.map((step, i) => (
-            <li key={i} className="text-xs" dangerouslySetInnerHTML={{ __html: step }} />
-          ))}
-        </ol>
+        <div className="text-xs text-ink-700 space-y-0.5 whitespace-pre-line font-mono leading-relaxed">
+          {help.steps.join('\n')}
+        </div>
       </div>
     </details>
   )

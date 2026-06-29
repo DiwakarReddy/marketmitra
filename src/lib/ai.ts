@@ -6,6 +6,7 @@
 
 import OpenAI from 'openai'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { resolveChannel } from './channel-resolver'
 
 export type AIProvider = 'openai' | 'google'
 
@@ -108,6 +109,19 @@ export async function generateAIReply(
     if (result) return result
   }
 
+  // Try business's own key as a last resort (used by users who connect
+  // their own OpenAI/Google AI in Integrations without setting a platform key)
+  const bizGemini = await getGeminiForBusiness(enriched.businessId)
+  if (bizGemini) {
+    const result = await tryGemini(enriched, conversationHistory, userMessage)
+    if (result) return result
+  }
+  const bizOpenAI = await getOpenAIForBusiness(enriched.businessId)
+  if (bizOpenAI) {
+    const result = await tryOpenAI(enriched, conversationHistory, userMessage)
+    if (result) return result
+  }
+
   // Smart fallback (Hinglish pattern-matching)
   return mockReply(enriched, userMessage)
 }
@@ -118,22 +132,43 @@ export async function generateAIReply(
 
 export async function generateWithCustomPrompt(
   systemPrompt: string,
-  userMessage: string
+  userMessage: string,
+  businessId?: string
 ): Promise<string | null> {
   const provider = (process.env.AI_PROVIDER || '').toLowerCase() as AIProvider | ''
 
+  // Probe both business keys so the order is deterministic per business:
+  // their stored key wins regardless of provider env.
+  const bizOpenAI = await getOpenAIForBusiness(businessId)
+  const bizGemini = await getGeminiForBusiness(businessId)
+  const hasBusiness = !!(bizOpenAI || bizGemini)
+
+  // 1) Business's own key first — they're paying the provider directly
+  if (bizGemini && (provider === 'google' || provider === '' || hasBusiness)) {
+    const r = await tryGeminiCustomPrompt(businessId, systemPrompt, userMessage)
+    if (r) return r
+  }
+  if (bizOpenAI && (provider === 'openai' || provider === '' || hasBusiness)) {
+    const r = await tryOpenAICustomPrompt(businessId, systemPrompt, userMessage)
+    if (r) return r
+  }
+
+  // 2) Platform key fallback
   if (provider === 'google' || (!provider && process.env.GOOGLE_API_KEY)) {
-    return await tryGeminiCustomPrompt(systemPrompt, userMessage)
+    const r = await tryGeminiCustomPrompt(businessId, systemPrompt, userMessage)
+    if (r) return r
   }
   if (provider === 'openai' || (!provider && process.env.OPENAI_API_KEY)) {
-    return await tryOpenAICustomPrompt(systemPrompt, userMessage)
+    const r = await tryOpenAICustomPrompt(businessId, systemPrompt, userMessage)
+    if (r) return r
   }
   return null
 }
 
-async function tryOpenAICustomPrompt(systemPrompt: string, userMessage: string): Promise<string | null> {
-  const openai = getOpenAI()
-  if (!openai) return null
+async function tryOpenAICustomPrompt(businessId: string | undefined, systemPrompt: string, userMessage: string): Promise<string | null> {
+  const r = await getOpenAIForBusiness(businessId)
+  if (!r) return null
+  const openai = r.client
   try {
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -142,7 +177,7 @@ async function tryOpenAICustomPrompt(systemPrompt: string, userMessage: string):
         { role: 'user', content: userMessage },
       ],
       temperature: 0.7,
-      max_tokens: 300,
+      max_tokens: 800, // templates need more output than chat replies
     })
     return completion.choices[0]?.message?.content?.trim() || null
   } catch (err) {
@@ -151,9 +186,10 @@ async function tryOpenAICustomPrompt(systemPrompt: string, userMessage: string):
   }
 }
 
-async function tryGeminiCustomPrompt(systemPrompt: string, userMessage: string): Promise<string | null> {
-  const genai = getGemini()
-  if (!genai) return null
+async function tryGeminiCustomPrompt(businessId: string | undefined, systemPrompt: string, userMessage: string): Promise<string | null> {
+  const r = await getGeminiForBusiness(businessId)
+  if (!r) return null
+  const genai: GoogleGenerativeAI = r.client
   try {
     const model = genai.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' })
     const result = await model.generateContent({
@@ -161,7 +197,7 @@ async function tryGeminiCustomPrompt(systemPrompt: string, userMessage: string):
         { role: 'user', parts: [{ text: userMessage }] },
       ],
       systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
-      generationConfig: { temperature: 0.7, maxOutputTokens: 300 },
+      generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
     })
     return result.response.text() || null
   } catch (err) {
@@ -174,6 +210,27 @@ async function tryGeminiCustomPrompt(systemPrompt: string, userMessage: string):
 // OPENAI
 // ============================================================
 
+/** Resolve an OpenAI client — first checks the business's own stored
+ *  key (channel: 'openai'), then falls back to the platform env var. */
+async function getOpenAIForBusiness(businessId?: string): Promise<{ client: OpenAI; source: 'business' | 'platform' } | null> {
+  // 1) Business's own key takes priority — they're paying OpenAI directly
+  if (businessId) {
+    try {
+      const resolved = await resolveChannel(businessId, 'openai')
+      const key = resolved?.credentials?.apiKey
+      if (key && key.startsWith('sk-')) {
+        return { client: new OpenAI({ apiKey: key }), source: 'business' }
+      }
+    } catch {}
+  }
+  // 2) Platform key fallback
+  const envKey = process.env.OPENAI_API_KEY
+  if (envKey && envKey !== 'sk-...') {
+    return { client: new OpenAI({ apiKey: envKey }), source: 'platform' }
+  }
+  return null
+}
+
 function getOpenAI(): OpenAI | null {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey || apiKey === 'sk-...') return null
@@ -185,8 +242,9 @@ async function tryOpenAI(
   history: Array<{ role: 'customer' | 'assistant'; content: string }>,
   userMessage: string
 ): Promise<string | null> {
-  const openai = getOpenAI()
-  if (!openai) return null
+  const r = await getOpenAIForBusiness(context.businessId)
+  if (!r) return null
+  const openai = r.client
 
   try {
     const systemPrompt = buildSystemPrompt(context)
@@ -216,6 +274,25 @@ async function tryOpenAI(
 // GOOGLE GEMINI
 // ============================================================
 
+/** Resolve a Gemini client — first checks the business's own stored
+ *  key (channel: 'google_ai'), then falls back to the platform env var. */
+async function getGeminiForBusiness(businessId?: string): Promise<{ client: GoogleGenerativeAI; source: 'business' | 'platform' } | null> {
+  if (businessId) {
+    try {
+      const resolved = await resolveChannel(businessId, 'google_ai')
+      const key = resolved?.credentials?.apiKey
+      if (key && key.length > 10) {
+        return { client: new GoogleGenerativeAI(key), source: 'business' }
+      }
+    } catch {}
+  }
+  const envKey = process.env.GOOGLE_API_KEY
+  if (envKey && envKey !== '') {
+    return { client: new GoogleGenerativeAI(envKey), source: 'platform' }
+  }
+  return null
+}
+
 function getGemini(): GoogleGenerativeAI | null {
   const apiKey = process.env.GOOGLE_API_KEY
   if (!apiKey || apiKey === '') return null
@@ -227,8 +304,9 @@ async function tryGemini(
   history: Array<{ role: 'customer' | 'assistant'; content: string }>,
   userMessage: string
 ): Promise<string | null> {
-  const genai = getGemini()
-  if (!genai) return null
+  const r = await getGeminiForBusiness(context.businessId)
+  if (!r) return null
+  const genai: GoogleGenerativeAI = r.client
 
   try {
     // Gemini 1.5 Flash: free tier, fast, good at Hindi/Hinglish

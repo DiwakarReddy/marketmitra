@@ -356,24 +356,46 @@ export async function checkAIGuard(
     }
   }
 
-  // Budget
+  // Budget — only enforced when using the PLATFORM AI key.
+  // When the business has their own OpenAI/Google AI key configured,
+  // they pay the provider directly — the platform budget doesn't apply.
   if (!opts.skipBudget) {
-    const usage = await getCurrentUsage(businessId)
-    const planFeatures = getPlanFeatures(usage.plan)
-    const included = planFeatures.aiMessagesIncluded
-    if (included !== null && usage.used >= included) {
-      // Over limit — only allow if plan allows overage
-      // For now, hard block. Soft overage billing is a future enhancement.
-      await releaseConcurrentSlot(businessId)
-      return {
-        allowed: false,
-        reason: 'budget',
-        message: `Monthly AI budget reached (${included} messages on ${planFeatures.label}). Upgrade your plan for more.`,
+    const usingOwnKey = await hasBusinessAIKey(businessId)
+    if (!usingOwnKey) {
+      const usage = await getCurrentUsage(businessId)
+      const planFeatures = getPlanFeatures(usage.plan)
+      const included = planFeatures.aiMessagesIncluded
+      if (included !== null && usage.used >= included) {
+        // Over limit — only allow if plan allows overage
+        // For now, hard block. Soft overage billing is a future enhancement.
+        await releaseConcurrentSlot(businessId)
+        return {
+          allowed: false,
+          reason: 'budget',
+          message: `Monthly AI budget reached (${included} messages on ${planFeatures.label}). Connect your own OpenAI or Google AI key in Settings → Integrations to keep going, or upgrade your plan.`,
+        }
       }
     }
   }
 
   return { allowed: true }
+}
+
+/** Check whether the business has their own AI provider key connected.
+ *  Used to bypass the platform budget when the user pays the provider directly. */
+async function hasBusinessAIKey(businessId: string): Promise<boolean> {
+  try {
+    const { resolveChannel } = await import('./channel-resolver')
+    const [openai, gemini] = await Promise.all([
+      resolveChannel(businessId, 'openai'),
+      resolveChannel(businessId, 'google_ai'),
+    ])
+    if (openai?.credentials?.apiKey && String(openai.credentials.apiKey).startsWith('sk-')) return true
+    if (gemini?.credentials?.apiKey && String(gemini.credentials.apiKey).length > 10) return true
+    return false
+  } catch {
+    return false
+  }
 }
 
 /** Release a concurrent slot (call if you bail out after acquiring). */
