@@ -9,14 +9,14 @@
 //   - per-template usage stats
 
 import { useEffect, useMemo, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
 import {
-  Plus, Trash2, Eye, EyeOff, Save, X, Send, Sparkles, Loader2,
-  Mail, MessageSquare, Smartphone, Hash, ChevronDown, ChevronUp, Layers,
+  Plus, Trash2, Eye, EyeOff, Save, X, Sparkles, Loader2,
+  Mail, MessageSquare, Smartphone, Hash, Layers,
 } from 'lucide-react'
 import { sampleTemplate } from '@/lib/template-engine'
 
@@ -646,6 +646,19 @@ function AIGenerateModal({
               <option value="casual">Casual</option>
             </select>
           </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-ink-700">Category</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as Category)}
+            className="w-full h-9 rounded border border-ink-200 px-2 text-sm bg-white"
+          >
+            <option value="marketing">Marketing</option>
+            <option value="transactional">Transactional</option>
+            <option value="system">System</option>
+          </select>
         </div>
 
         <Button variant="brand" onClick={generate} disabled={generating} className="w-full">

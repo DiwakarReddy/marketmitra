@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
-import { Edit2, Save, X, Plus, Trash2, FileText, Eye, Tag, Sparkles } from 'lucide-react'
+import { Edit2, Save, X, Plus, FileText, Eye, Sparkles } from 'lucide-react'
 
 interface Template {
   name: string

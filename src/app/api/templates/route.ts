@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { applyRateLimit, RATE_LIMITS, rateLimitResponse } from '@/lib/rate-limit'
+import { applyRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { dbToTemplate, validateTemplate, extractTokens } from '@/lib/templates'
 
 export async function GET(req: NextRequest) {

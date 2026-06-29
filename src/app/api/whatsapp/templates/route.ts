@@ -5,7 +5,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/db'
 import { resolveChannel } from '@/lib/channel-resolver'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -147,7 +146,7 @@ function extractVariables(text: string): string[] {
   return Array.from({ length: max }, (_, i) => `var_${i + 1}`)
 }
 
-export async function POST(req: Request) {
+export async function POST(_req: Request) {
   // Force refresh by clearing cache
   const session = await getServerSession(authOptions)
   if (!session?.user || !(session as any).businessId) {

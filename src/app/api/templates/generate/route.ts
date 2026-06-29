@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { applyRateLimit, RATE_LIMITS, rateLimitResponse } from '@/lib/rate-limit'
+import { applyRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { generateTemplateWithAI } from '@/lib/templates'
 
 export async function POST(req: NextRequest) {

@@ -20,7 +20,7 @@
 //   - {{custom.<key>}}                            (custom field values)
 
 import { prisma } from '@/lib/db'
-import { buildTemplateContext, type TemplateContextInput } from './template-context'
+import { buildTemplateContext } from './template-context'
 import { fillTemplate } from './template-engine'
 import { guardedAICustom } from './ai-guard'
 

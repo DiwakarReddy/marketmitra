@@ -9,7 +9,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { dbToTemplate, renderTemplateForCustomer, recordTemplateUsage } from '@/lib/templates'
 import { sendOutbound, type OutboundMessage } from '@/lib/messaging-bus'
-import { applyRateLimit, RATE_LIMITS, rateLimitResponse } from '@/lib/rate-limit'
+import { applyRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
