@@ -112,21 +112,31 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 3: Verify signature using THIS business's secret.
-    // Meta signs webhook payloads with the **app secret** (not the access token).
-    // We accept the per-tenant `webhookVerifyToken` field as a custom HMAC key
-    // for businesses that want their own signing key.
+    // Meta signs webhook payloads with HMAC-SHA256(app_secret, rawBody).
+    // For per-tenant deployments, the app secret lives in the encrypted
+    // channel credentials (creds.appSecret). We fall back to a global env
+    // var only for the single-tenant / founder-mode setup.
     if (signature && cfg.credentials) {
       try {
         const creds = await decryptJSON<Record<string, string>>(cfg.credentials, businessId)
-        // For Meta: the app secret is the HMAC key. Fall back to webhookVerifyToken
-        // for non-Meta providers, and to the access token prefix only as a last resort
-        // (and only acceptable in dev).
         const isMeta = (cfg.provider || 'meta') === 'meta'
-        const secret = isMeta
-          ? (process.env.META_APP_SECRET || creds.appSecret || creds.webhookVerifyToken)
-          : (creds.webhookVerifyToken || process.env.WHATSAPP_APP_SECRET)
 
-        if (secret && process.env.NODE_ENV === 'production') {
+        // For Meta: MUST be the App Secret. webhookVerifyToken is for the
+        // verification GET handshake, not for signing.
+        const secret = isMeta
+          ? (creds.appSecret || process.env.META_APP_SECRET)
+          : (creds.appSecret || creds.webhookVerifyToken || process.env.WHATSAPP_APP_SECRET)
+
+        if (process.env.NODE_ENV === 'production') {
+          if (!secret) {
+            console.warn(
+              `[WhatsApp] No signing secret configured for business ${businessId} ` +
+              `(provider=${cfg.provider || 'meta'}). Add App Secret in WhatsApp channel settings.`
+            )
+            return NextResponse.json({
+              error: 'Webhook signing secret not configured. Add your Meta App Secret in channel settings.',
+            }, { status: 503 })
+          }
           if (!verifyPerTenantSignature(rawBody, signature, secret)) {
             await audit({
               businessId, channel: 'whatsapp', action: 'test_failed',

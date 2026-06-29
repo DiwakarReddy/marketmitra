@@ -97,9 +97,13 @@ export async function verifyWebhookSignature(opts: {
   if (!opts.signature && opts.mode === 'optional') return { ok: true }
   if (!opts.signature) return { ok: false, reason: 'no_signature' }
 
-  // Meta / AiSensy / Gupshup use HMAC-SHA256 with app secret
+  // Meta / AiSensy / Gupshup use HMAC-SHA256 with the app secret
   if (opts.provider === 'meta' || opts.provider === 'aisensy' || opts.provider === 'gupshup') {
-    const secret = opts.credentials.appSecret || opts.credentials.webhookVerifyToken
+    // For Meta: appSecret is required (webhookVerifyToken is for GET handshake only)
+    // For AiSensy/360dialog/Gupshup: appSecret if they support HMAC, else webhookVerifyToken
+    const secret = opts.provider === 'meta'
+      ? opts.credentials.appSecret
+      : (opts.credentials.appSecret || opts.credentials.webhookVerifyToken)
     if (!secret) return { ok: false, reason: 'no_secret' }
 
     const provided = opts.signature.replace(/^sha256=/, '').trim()

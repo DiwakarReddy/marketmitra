@@ -36,10 +36,11 @@ export const CHANNEL_SCHEMAS: Record<string, ChannelSchema> = {
     fields: [
       { key: 'phoneNumberId', label: 'Phone Number ID', type: 'text', required: true, placeholder: '123456789012345', helpText: 'From Meta Business Manager → WhatsApp → Phone Numbers' },
       { key: 'whatsappBusinessId', label: 'WhatsApp Business Account ID', type: 'text', required: false, placeholder: '987654321098765' },
-      { key: 'accessToken', label: 'Permanent Access Token', type: 'password', required: true, helpText: 'Generate from Meta Business Manager → System Users' },
-      { key: 'webhookVerifyToken', label: 'Webhook Verify Token', type: 'password', required: false, helpText: 'Any random string, set same in Meta webhook config' },
+      { key: 'accessToken', label: 'Permanent Access Token', type: 'password', required: true, helpText: 'Generate from Meta Business Manager → System Users (needs whatsapp_business_management + whatsapp_business_messaging scopes)' },
+      { key: 'appSecret', label: 'Meta App Secret (recommended)', type: 'password', required: false, helpText: 'Required to verify webhook signatures. Find in Meta Developer Portal → App Settings → Basic → App Secret. Get from your META APP, not the access token.' },
+      { key: 'webhookVerifyToken', label: 'Webhook Verify Token', type: 'password', required: false, helpText: 'Any random string you also enter in Meta webhook config. Used for webhook URL verification, not signing.' },
     ],
-    testInstructions: 'After connecting, set webhook URL in Meta to: https://yourdomain.com/api/whatsapp/webhook',
+    testInstructions: 'After connecting: (1) set webhook URL in Meta to https://yourdomain.com/api/whatsapp/webhook, (2) paste the App Secret above for signature verification, (3) subscribe to messages + message_status events.',
   },
 
   voice: {
