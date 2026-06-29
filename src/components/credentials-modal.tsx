@@ -150,7 +150,7 @@ export function CredentialsModal({
             </div>
           )}
 
-          {/* Dynamic fields */}
+{/* Dynamic fields */}
           {channel.fields.map((field) => {
             const currentValue = values[field.key] || ''
             const isMasked = currentValue.startsWith('•')
@@ -165,18 +165,19 @@ export function CredentialsModal({
                 </label>
                 <div className="relative">
                   <Input
-                    type={isSecret && !show ? 'password' : 'text'}
+                    type={isSecret && !show && !isMasked ? 'password' : 'text'}
                     value={currentValue}
                     onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
-                    placeholder={field.placeholder || (isMasked ? '••••••••' : '')}
-                    className={isSecret ? 'pr-20' : ''}
+                    placeholder={isMasked ? '••••••••' : ''}
+                    className={isSecret && !isMasked ? 'pr-20' : ''}
                   />
-                  {isSecret && (
+                  {isSecret && !isMasked && (
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => setShowSecrets({ ...showSecrets, [field.key]: !show })}
                         className="p-1 hover:bg-ink-100 rounded"
+                        title={show ? 'Hide' : 'Show'}
                       >
                         {show ? <EyeOff className="w-4 h-4 text-ink-500" /> : <Eye className="w-4 h-4 text-ink-500" />}
                       </button>
@@ -188,7 +189,7 @@ export function CredentialsModal({
                 )}
                 {isMasked && (
                   <p className="text-xs text-amber-600 mt-1">
-                    ⚠️ Saved value is hidden. Leave as is to keep it, or type new value to replace.
+                    ⚠️ Saved value is hidden — secrets can't be displayed for security. Leave as is to keep it, or type a new value to replace it.
                   </p>
                 )}
               </div>

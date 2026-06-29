@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { scheduleNextOccurrence } from '@/lib/automation/recurring'
+import { triggerDripsForEvent } from '@/lib/drips'
 
 // PATCH /api/appointments/:id
 // Update appointment status, notes, etc.
@@ -71,6 +72,15 @@ export async function PATCH(
         }
       } catch (err) {
         console.error('[recurring] Failed to schedule next occurrence:', err)
+      }
+    }
+
+    // TRIGGER: Completed → fire post-visit drip sequences
+    if (newStatus === 'completed' && oldStatus !== 'completed') {
+      try {
+        await triggerDripsForEvent(businessId, 'appointment_completed', appt.customerId)
+      } catch (err) {
+        console.error('[drips] Failed to trigger appointment_completed drip:', err)
       }
     }
 

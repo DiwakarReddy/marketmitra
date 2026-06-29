@@ -51,87 +51,92 @@ model VerificationToken {
 // ============ CORE ============
 
 model Business {
-  id          String   @id @default(cuid())
-  name        String
-  vertical    String   // dental, salon, clinic, restaurant, real_estate, coaching
-  ownerName   String
-  ownerEmail  String   @unique
-  ownerPhone  String
-  city        String
-  state       String?
-  language    String   @default("hinglish")
-  timezone    String   @default("Asia/Kolkata")
-  currency    String   @default("INR")
+  id         String  @id @default(cuid())
+  name       String
+  vertical   String // dental, salon, clinic, restaurant, real_estate, coaching
+  ownerName  String
+  ownerEmail String  @unique
+  ownerPhone String
+  city       String
+  state      String?
+  language   String  @default("hinglish")
+  timezone   String  @default("Asia/Kolkata")
+  currency   String  @default("INR")
 
-  services    Service[]
-  hours       BusinessHour[]
-  knowledge   String?
+  services  Service[]
+  hours     BusinessHour[]
+  knowledge String?
 
-  whatsappConnected   Boolean  @default(false)
-  whatsappPhone       String?
-  instagramConnected  Boolean  @default(false)
-  googleAdsConnected  Boolean  @default(false)
-  voiceConnected      Boolean  @default(false)
-  googleCalendarId    String?
+  whatsappConnected  Boolean @default(false)
+  whatsappPhone      String?
+  instagramConnected Boolean @default(false)
+  googleAdsConnected Boolean @default(false)
+  voiceConnected     Boolean @default(false)
+  googleCalendarId   String?
 
   // Tier 1 features
-  googleReviewUrl     String?       // Google review link (e.g. https://g.page/r/xxx/review)
-  reviewRequestDelayHours Int       @default(2)
-  birthdayWishesEnabled Boolean     @default(true)
-  festivalCampaignsEnabled Boolean   @default(true)
-  confirmationsEnabled Boolean      @default(true)
-  noShowPredictionEnabled Boolean   @default(true)
-  wishOfferPercent    Int           @default(10)  // % off for birthday customer
+  googleReviewUrl            String? // Google review link (e.g. https://g.page/r/xxx/review)
+  reviewRequestDelayHours    Int       @default(2)
+  birthdayWishesEnabled      Boolean   @default(true)
+  festivalCampaignsEnabled   Boolean   @default(true)
+  confirmationsEnabled       Boolean   @default(true)
+  noShowPredictionEnabled    Boolean   @default(true)
+  wishOfferPercent           Int       @default(10) // % off for birthday customer
   // AI usage tracking
-  usingPlatformKey      Boolean      @default(false)  // Using platform's AI key vs own
-  aiMessagesThisMonth   Int          @default(0)
-  aiMessagesResetAt     DateTime?                     // When to reset monthly counter
-  platformKeySurchargeActive Boolean  @default(false) // Paying for platform key
-  businessSince       DateTime?     // For anniversary wishes
+  usingPlatformKey           Boolean   @default(false) // Using platform's AI key vs own
+  aiMessagesThisMonth        Int       @default(0)
+  aiMessagesResetAt          DateTime? // When to reset monthly counter
+  platformKeySurchargeActive Boolean   @default(false) // Paying for platform key
+  businessSince              DateTime? // For anniversary wishes
 
-  plan            String   @default("trial")
-  monthlyPricePaise Int    @default(0)
-  perBookingPaise   Int    @default(20000)
-  razorpayCustomerId String?
+  plan                   String    @default("trial")
+  monthlyPricePaise      Int       @default(0)
+  perBookingPaise        Int       @default(20000)
+  razorpayCustomerId     String?
   razorpaySubscriptionId String?
-  trialEndsAt      DateTime?
-  onboardedAt      DateTime?
-  deletedAt        DateTime?
-  pausedAt         DateTime?
-  twoFactorEnabled Boolean  @default(false)
-  twoFactorSecret  String?
-  notifyByEmail    Boolean  @default(true)
-  notifyByWhatsapp Boolean  @default(false)
-  dailySummaryHour Int      @default(9)
+  trialEndsAt            DateTime?
+  onboardedAt            DateTime?
+  deletedAt              DateTime?
+  pausedAt               DateTime?
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorSecret        String?
+  notifyByEmail          Boolean   @default(true)
+  notifyByWhatsapp       Boolean   @default(false)
+  dailySummaryHour       Int       @default(9)
 
   // Tax / GST (editable in Settings, displayed on Billing page)
-  legalName        String?  // Trade/legal name on GST certificate (often different from brand name)
-  gstin            String?  // 15-char GSTIN e.g. "23AAAAA0000A1Z5"
-  pan              String?  // 10-char PAN e.g. "AAAAA0000A"
-  hsnSac           String?  // Default HSN/SAC code for services (e.g. "998365" for marketing)
-  stateCode        String?  // 2-digit state code for tax split (intra vs inter)
-  taxScheme        String?  // 'regular' | 'composition' | 'exempt'
-  billingAddress   String?  // Free-form address line 1
-  billingCity      String?
-  billingState     String?
-  billingPincode   String?
+  legalName      String? // Trade/legal name on GST certificate (often different from brand name)
+  gstin          String? // 15-char GSTIN e.g. "23AAAAA0000A1Z5"
+  pan            String? // 10-char PAN e.g. "AAAAA0000A"
+  hsnSac         String? // Default HSN/SAC code for services (e.g. "998365" for marketing)
+  stateCode      String? // 2-digit state code for tax split (intra vs inter)
+  taxScheme      String? // 'regular' | 'composition' | 'exempt'
+  billingAddress String? // Free-form address line 1
+  billingCity    String?
+  billingState   String?
+  billingPincode String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  users        User[]
-  customers    Customer[]
-  campaigns    Campaign[]
-  conversations Conversation[]
-  appointments Appointment[]
-  leads        Lead[]
-  approvals    Approval[]
-  activities   Activity[]
-  invoices     Invoice[]
-  voiceCalls   VoiceCall[]
-  failedMessages FailedMessage[]
-  channelConfigs ChannelConfig[]
+  users               User[]
+  customers           Customer[]
+  campaigns           Campaign[]
+  conversations       Conversation[]
+  appointments        Appointment[]
+  leads               Lead[]
+  approvals           Approval[]
+  activities          Activity[]
+  invoices            Invoice[]
+  voiceCalls          VoiceCall[]
+  failedMessages      FailedMessage[]
+  channelConfigs      ChannelConfig[]
   channelConfigAudits ChannelConfigAudit[]
+  customFields        CustomField[]
+  knowledgeSources    KnowledgeSource[]
+  dripSequences       DripSequence[]
+  dripEnrollments     DripEnrollment[]
+  ctwaCampaigns       CTWACampaign[]
 }
 
 model User {
@@ -145,9 +150,9 @@ model User {
   role          String    @default("owner")
   createdAt     DateTime  @default(now())
 
-  business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  accounts   Account[]
-  sessions   Session[]
+  business Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  accounts Account[]
+  sessions Session[]
 
   @@index([businessId])
 }
@@ -163,21 +168,21 @@ model Service {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
 
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
   appointments Appointment[]
 
   @@index([businessId])
 }
 
 model BusinessHour {
-  id         String   @id @default(cuid())
+  id         String  @id @default(cuid())
   businessId String
   dayOfWeek  Int
   openTime   String
   closeTime  String
-  closed     Boolean  @default(false)
+  closed     Boolean @default(false)
 
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, dayOfWeek])
 }
@@ -185,33 +190,35 @@ model BusinessHour {
 // ============ CUSTOMERS & CONVERSATIONS ============
 
 model Customer {
-  id           String   @id @default(cuid())
-  businessId   String
-  name         String
-  phone        String
-  email        String?
-  language     String   @default("hinglish")
-  tags         String?
-  source       String?
-  birthday     DateTime?
-  anniversary  DateTime?
-  lastReviewRequestAt DateTime?
-  lastBirthdayWishedAt DateTime?
+  id                      String    @id @default(cuid())
+  businessId              String
+  name                    String
+  phone                   String
+  email                   String?
+  language                String    @default("hinglish")
+  tags                    String?
+  source                  String?
+  birthday                DateTime?
+  anniversary             DateTime?
+  lastReviewRequestAt     DateTime?
+  lastBirthdayWishedAt    DateTime?
   lastAnniversaryWishedAt DateTime?
-  lastVisitAt  DateTime?
-  totalVisits  Int      @default(0)
-  totalSpentPaise Int   @default(0)
-  notes        String?
-  optedOut     Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  lastVisitAt             DateTime?
+  totalVisits             Int       @default(0)
+  totalSpentPaise         Int       @default(0)
+  notes                   String?
+  optedOut                Boolean   @default(false)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
-  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  conversations Conversation[]
-  appointments  Appointment[]
-  leads         Lead[]
-  voiceCalls    VoiceCall[]
-  automationEvents AutomationEvent[]
+  business          Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversations     Conversation[]
+  appointments      Appointment[]
+  leads             Lead[]
+  voiceCalls        VoiceCall[]
+  automationEvents  AutomationEvent[]
+  customFieldValues CustomerFieldValue[]
+  dripEnrollments   DripEnrollment[]
 
   @@unique([businessId, phone])
   @@index([businessId])
@@ -219,44 +226,44 @@ model Customer {
 }
 
 model Conversation {
-  id           String   @id @default(cuid())
-  businessId   String
-  customerId   String
-  channel      String
-  status       String   @default("ai_handling")
+  id            String   @id @default(cuid())
+  businessId    String
+  customerId    String
+  channel       String
+  status        String   @default("ai_handling")
   lastMessageAt DateTime @default(now())
-  aiActive     Boolean  @default(true)
-  unreadCount  Int      @default(0)
+  aiActive      Boolean  @default(true)
+  unreadCount   Int      @default(0)
   internalNotes String?
-  labels       String?
-  assignedTo   String?
-  createdAt    DateTime @default(now())
+  labels        String?
+  assignedTo    String?
+  createdAt     DateTime @default(now())
 
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  messages     Message[]
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  messages Message[]
 
   @@index([businessId])
   @@index([customerId])
 }
 
 model Message {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   conversationId String
   direction      String
   sender         String
   content        String
   mediaUrl       String?
   metadata       String?
-  externalId     String?  // Provider's message ID (Meta wamid, Twilio MessageSid, etc.)
-  deliveryStatus String?  // 'sent' | 'delivered' | 'read' | 'failed'
+  externalId     String? // Provider's message ID (Meta wamid, Twilio MessageSid, etc.)
+  deliveryStatus String? // 'sent' | 'delivered' | 'read' | 'failed'
   deliveredAt    DateTime?
   readAt         DateTime?
   failedAt       DateTime?
   errorMessage   String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
   @@index([externalId])
@@ -266,47 +273,47 @@ model Message {
 // ============ CAMPAIGNS & APPROVALS ============
 
 model Campaign {
-  id          String   @id @default(cuid())
-  businessId  String
-  name        String
-  type        String
-  status      String   @default("draft")
-  channels    String
-  audience    String?
-  messageBody String?
-  creativeUrl String?
-  budgetPaise Int      @default(0)
-  spentPaise  Int      @default(0)
-  leads       Int      @default(0)
-  bookings    Int      @default(0)
-  revenuePaise Int     @default(0)
+  id           String    @id @default(cuid())
+  businessId   String
+  name         String
+  type         String
+  status       String    @default("draft")
+  channels     String
+  audience     String?
+  messageBody  String?
+  creativeUrl  String?
+  budgetPaise  Int       @default(0)
+  spentPaise   Int       @default(0)
+  leads        Int       @default(0)
+  bookings     Int       @default(0)
+  revenuePaise Int       @default(0)
   scheduledFor DateTime?
-  startedAt   DateTime?
-  endedAt     DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  startedAt    DateTime?
+  endedAt      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([businessId, status])
 }
 
 model Approval {
-  id          String   @id @default(cuid())
-  businessId  String
-  campaignId  String?
-  type        String
-  title       String
-  preview     String
-  recipients  Int      @default(0)
-  status      String   @default("pending")
-  approverId  String?
-  approvedAt  DateTime?
-  rejectedAt  DateTime?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  businessId String
+  campaignId String?
+  type       String
+  title      String
+  preview    String
+  recipients Int       @default(0)
+  status     String    @default("pending")
+  approverId String?
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  createdAt  DateTime  @default(now())
 
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([businessId, status])
@@ -315,30 +322,30 @@ model Approval {
 // ============ APPOINTMENTS, LEADS, VOICE ============
 
 model Appointment {
-  id          String   @id @default(cuid())
-  businessId  String
-  customerId  String
-  serviceId   String?
-  startsAt    DateTime
-  endsAt      DateTime
-  status      String   @default("booked")
-  source      String   @default("ai")
-  notes       String?
-  reminderSent Boolean @default(false)
-  confirmationSent Boolean @default(false)
-  confirmedAt DateTime?
-  noShowScore Float?
-  recurrenceRule String?
+  id                  String    @id @default(cuid())
+  businessId          String
+  customerId          String
+  serviceId           String?
+  startsAt            DateTime
+  endsAt              DateTime
+  status              String    @default("booked")
+  source              String    @default("ai")
+  notes               String?
+  reminderSent        Boolean   @default(false)
+  confirmationSent    Boolean   @default(false)
+  confirmedAt         DateTime?
+  noShowScore         Float?
+  recurrenceRule      String?
   parentAppointmentId String?
-  reviewRequestSent Boolean @default(false)
-  nextOccurrenceId String?
-  googleEventId String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  reviewRequestSent   Boolean   @default(false)
+  nextOccurrenceId    String?
+  googleEventId       String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  service     Service?  @relation(fields: [serviceId], references: [id])
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  service  Service? @relation(fields: [serviceId], references: [id])
 
   @@index([businessId, startsAt])
   @@index([businessId, status])
@@ -357,32 +364,32 @@ model Lead {
   notes        String?
   createdAt    DateTime @default(now())
 
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer     Customer? @relation(fields: [customerId], references: [id])
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id])
 
   @@index([businessId, status])
   @@index([businessId, source])
 }
 
 model VoiceCall {
-  id           String   @id @default(cuid())
-  businessId   String
-  customerId   String
-  campaignName String?
-  twilioCallSid String? @unique
-  status       String   @default("queued") // queued, ringing, in_progress, completed, failed, no_answer
-  direction    String   @default("outbound")
-  durationSec  Int      @default(0)
-  transcript   String?
-  aiSummary    String?
-  outcome      String?  // booked, callback, not_interested, voicemail
-  recordingUrl String?
-  startedAt    DateTime?
-  endedAt      DateTime?
-  createdAt    DateTime @default(now())
+  id            String    @id @default(cuid())
+  businessId    String
+  customerId    String
+  campaignName  String?
+  twilioCallSid String?   @unique
+  status        String    @default("queued") // queued, ringing, in_progress, completed, failed, no_answer
+  direction     String    @default("outbound")
+  durationSec   Int       @default(0)
+  transcript    String?
+  aiSummary     String?
+  outcome       String? // booked, callback, not_interested, voicemail
+  recordingUrl  String?
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime  @default(now())
 
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([businessId, status])
   @@index([businessId, createdAt])
@@ -400,68 +407,69 @@ model Activity {
   metadata    String?
   createdAt   DateTime @default(now())
 
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, createdAt])
 }
 
 model Invoice {
-  id            String   @id @default(cuid())
-  businessId    String
-  periodStart   DateTime
-  periodEnd     DateTime
-  bookings      Int      @default(0)
-  amountPaise   Int      @default(0)
-  status        String   @default("pending")
-  razorpayId    String?
+  id                String    @id @default(cuid())
+  businessId        String
+  periodStart       DateTime
+  periodEnd         DateTime
+  bookings          Int       @default(0)
+  amountPaise       Int       @default(0)
+  status            String    @default("pending")
+  razorpayId        String?
   razorpayInvoiceId String?
-  paidAt        DateTime?
-  pdfUrl        String?
-  createdAt     DateTime @default(now())
+  paidAt            DateTime?
+  pdfUrl            String?
+  createdAt         DateTime  @default(now())
 
-  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([businessId, status])
 }
 
 model FailedMessage {
-  id           String   @id @default(cuid())
-  businessId   String
-  customerId   String?
-  phone        String
-  message      String
-  type         String   @default("text")
-  provider     String
-  error        String
-  attempts     Int      @default(1)
-  status       String   @default("pending") // pending, retrying, dead, sent
-  lastAttemptAt DateTime @default(now())
+  id            String    @id @default(cuid())
+  businessId    String
+  customerId    String?
+  phone         String
+  message       String
+  type          String    @default("text")
+  provider      String
+  error         String
+  attempts      Int       @default(1)
+  status        String    @default("pending") // pending, retrying, dead, sent
+  lastAttemptAt DateTime  @default(now())
   nextAttemptAt DateTime?
-  resolvedAt   DateTime?
-  createdAt    DateTime @default(now())
+  resolvedAt    DateTime?
+  createdAt     DateTime  @default(now())
 
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, status])
   @@index([status, nextAttemptAt])
 }
+
 // ============ TIER 1 AUTOMATION ============
 
 // Tracks every automation send so we don't spam customers
 model AutomationEvent {
-  id          String   @id @default(cuid())
-  businessId  String
-  customerId  String?
-  customer    Customer? @relation(fields: [customerId], references: [id])
+  id            String    @id @default(cuid())
+  businessId    String
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id])
   appointmentId String?
-  type        String   // birthday_wish, anniversary_wish, review_request, festival_offer, no_show_warning, confirmation_request, recurring_reminder
-  status      String   @default("sent") // sent, failed, skipped
-  channel     String   @default("whatsapp")
-  message     String
-  error       String?
-  metadata    String?
-  sentAt      DateTime @default(now())
+  type          String // birthday_wish, anniversary_wish, review_request, festival_offer, no_show_warning, confirmation_request, recurring_reminder
+  status        String    @default("sent") // sent, failed, skipped
+  channel       String    @default("whatsapp")
+  message       String
+  error         String?
+  metadata      String?
+  sentAt        DateTime  @default(now())
 
   @@index([businessId, type, sentAt])
   @@index([customerId, type, sentAt])
@@ -472,7 +480,7 @@ model Festival {
   name        String
   hindiName   String?
   date        DateTime
-  type        String   // hindu, muslim, national, secular
+  type        String // hindu, muslim, national, secular
   description String?
   greeting    String?
   // When business wants to send campaigns
@@ -486,72 +494,274 @@ model Festival {
 // ============ TEAM INVITES ============
 
 model TeamInvite {
-  id          String   @id @default(cuid())
-  businessId  String
-  email       String
-  role        String   @default("viewer") // owner, manager, viewer
-  token       String   @unique
-  invitedBy   String?
-  expiresAt   DateTime
-  acceptedAt  DateTime?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  businessId String
+  email      String
+  role       String    @default("viewer") // owner, manager, viewer
+  token      String    @unique
+  invitedBy  String?
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
 
   @@index([businessId])
   @@index([token])
 }
-
 
 // ============ MULTI-TENANT CHANNEL CONFIG ============
 // Stores per-business credentials (encrypted) for each channel
 // Replaces env-var-based single-tenant config
 
 model ChannelConfig {
-  id          String   @id @default(cuid())
-  businessId  String
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  channel     String   // 'whatsapp' | 'voice' | 'instagram' | 'google_ads' | 'google_calendar' | 'razorpay' | 'openai' | 'google_ai'
-  provider    String?  // For whatsapp: 'meta' | 'aisensy' | '360dialog'
-  isActive    Boolean  @default(true)
-  keyVersion  Int      @default(1)        // Increment on every credential rotation
-  lastUsedAt  DateTime?                    // Updated whenever credentials are used at runtime
-  lastRotatedAt DateTime?                  // When credentials were last updated
+  id             String    @id @default(cuid())
+  businessId     String
+  business       Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  channel        String // 'whatsapp' | 'voice' | 'instagram' | 'google_ads' | 'google_calendar' | 'razorpay' | 'openai' | 'google_ai'
+  provider       String? // For whatsapp: 'meta' | 'aisensy' | '360dialog'
+  isActive       Boolean   @default(true)
+  keyVersion     Int       @default(1) // Increment on every credential rotation
+  lastUsedAt     DateTime? // Updated whenever credentials are used at runtime
+  lastRotatedAt  DateTime? // When credentials were last updated
   // Non-secret config (phone number ID, customer ID, etc.)
-  config      String?  // JSON
+  config         String? // JSON
   // Encrypted secrets (API keys, tokens)
-  credentials String?  // Encrypted JSON
+  credentials    String? // Encrypted JSON
   // Connection health
-  lastTestedAt DateTime?
-  lastTestStatus String?  // 'success' | 'failed'
+  lastTestedAt   DateTime?
+  lastTestStatus String? // 'success' | 'failed'
   lastTestError  String?
-  connectedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  connectedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([businessId, channel])
   @@index([businessId, isActive])
 }
 
-
 // ============ CHANNEL AUDIT LOG ============
 // Immutable log of every credential change for compliance & debugging
 
 model ChannelConfigAudit {
-  id           String   @id @default(cuid())
-  businessId   String
-  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  channel      String
-  action       String   // 'created' | 'updated' | 'rotated' | 'deleted' | 'test_succeeded' | 'test_failed' | 'used'
-  actor        String   // 'owner' | 'admin' | 'system'
-  actorEmail   String?
-  ipAddress    String?
-  userAgent    String?
-  changes      String?  // JSON diff: { changed: ['accessToken'], added: ['webhookVerifyToken'] }
-  testResult   String?  // For test actions: 'success' | 'failed'
-  testError    String?
-  metadata     String?  // Additional context
-  createdAt    DateTime @default(now())
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  channel    String
+  action     String // 'created' | 'updated' | 'rotated' | 'deleted' | 'test_succeeded' | 'test_failed' | 'used'
+  actor      String // 'owner' | 'admin' | 'system'
+  actorEmail String?
+  ipAddress  String?
+  userAgent  String?
+  changes    String? // JSON diff: { changed: ['accessToken'], added: ['webhookVerifyToken'] }
+  testResult String? // For test actions: 'success' | 'failed'
+  testError  String?
+  metadata   String? // Additional context
+  createdAt  DateTime @default(now())
 
   @@index([businessId, channel, createdAt])
   @@index([businessId, createdAt])
   @@index([action, createdAt])
+}
+
+// ============ CUSTOM FIELDS (1) ============
+// Per-business configurable fields on Customer records (beyond name/phone/email).
+// Enables personalization in templates, broadcasts, drips, and CTWA targeting.
+
+model CustomField {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  key        String // machine name, e.g. 'last_treatment'
+  label      String // display name, e.g. 'Last Treatment'
+  type       String // 'text' | 'number' | 'date' | 'select' | 'boolean' | 'multiselect'
+  options    String? // JSON array for select/multiselect: ["Crown","Root Canal",...]
+  required   Boolean  @default(false)
+  active     Boolean  @default(true)
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  values CustomerFieldValue[]
+
+  @@unique([businessId, key])
+  @@index([businessId, active])
+}
+
+model CustomerFieldValue {
+  id         String      @id @default(cuid())
+  customerId String
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  fieldId    String
+  field      CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  value      String // stored as text; cast on read by field.type
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([customerId, fieldId])
+  @@index([fieldId])
+}
+
+// ============ KNOWLEDGE BASE MULTI-SOURCE (2) ============
+// Replaces Business.knowledge String? with structured sources.
+// Each source (manual / URL / PDF / FAQ) is chunked for retrieval.
+
+model KnowledgeSource {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  type         String // 'manual' | 'url' | 'pdf' | 'faq' | 'text'
+  title        String
+  content      String // full extracted text
+  sourceUrl    String? // for url/pdf: original source
+  status       String   @default("ready") // 'processing' | 'ready' | 'failed'
+  errorMessage String?
+  metadata     String? // JSON: { fileSize, pageCount, charCount, ... }
+  chunkCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  chunks KnowledgeChunk[]
+
+  @@index([businessId])
+  @@index([businessId, status])
+  @@index([businessId, type])
+}
+
+model KnowledgeChunk {
+  id        String          @id @default(cuid())
+  sourceId  String
+  source    KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  content   String
+  embedding String? // JSON array of floats (384-dim all-MiniLM-L6-v2 if available)
+  position  Int // order within source
+
+  @@index([sourceId])
+}
+
+// ============ DRIP SEQUENCES (3) ============
+// Time-spaced message sequences triggered by customer lifecycle events.
+
+model DripSequence {
+  id            String   @id @default(cuid())
+  businessId    String
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  trigger       String // 'manual' | 'new_customer' | 'appointment_completed' | 'lead_captured' | 'tag_added'
+  triggerConfig String? // JSON: { tag?: 'vip', delayHours?: 0 }
+  status        String   @default("active") // 'active' | 'paused' | 'archived'
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  steps       DripStep[]
+  enrollments DripEnrollment[]
+
+  @@index([businessId])
+  @@index([businessId, status])
+  @@index([businessId, trigger])
+}
+
+model DripStep {
+  id             String       @id @default(cuid())
+  sequenceId     String
+  sequence       DripSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  position       Int
+  delayHours     Int          @default(24) // hours after previous step (or after enrollment for first step)
+  channel        String       @default("whatsapp")
+  templateName   String? // Meta-approved template name (required for outbound)
+  templateLang   String? // 'en' | 'hi'
+  templateParams String? // JSON: ['{{customer.name}}', '{{customer.lastVisitAt}}', ...]
+  messageBody    String? // free-form fallback if no template (only for re-engagement, not cold)
+  createdAt      DateTime     @default(now())
+
+  @@unique([sequenceId, position])
+  @@index([sequenceId])
+}
+
+model DripEnrollment {
+  id          String       @id @default(cuid())
+  sequenceId  String
+  sequence    DripSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  customerId  String
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  businessId  String
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  currentStep Int          @default(0)
+  status      String       @default("active") // 'active' | 'completed' | 'stopped' | 'failed'
+  enrolledAt  DateTime     @default(now())
+  nextRunAt   DateTime
+  lastStepAt  DateTime?
+  completedAt DateTime?
+  stopReason  String? // 'opted_out' | 'replied' | 'manual' | 'failed'
+
+  executions DripExecution[]
+
+  @@unique([sequenceId, customerId])
+  @@index([businessId, status, nextRunAt])
+  @@index([nextRunAt])
+  @@index([customerId])
+}
+
+model DripExecution {
+  id           String         @id @default(cuid())
+  enrollmentId String
+  enrollment   DripEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  stepId       String
+  status       String         @default("sent") // 'sent' | 'failed' | 'skipped'
+  externalId   String? // provider message ID
+  error        String?
+  executedAt   DateTime       @default(now())
+
+  @@index([enrollmentId])
+  @@index([executedAt])
+}
+
+// ============ CTWA ADS (4) ============
+// Click-to-WhatsApp Ads — Meta Marketing API integration.
+
+model CTWACampaign {
+  id               String    @id @default(cuid())
+  businessId       String
+  business         Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  metaCampaignId   String?
+  metaAdSetId      String?
+  metaAdId         String?
+  metaCreativeId   String?
+  name             String
+  status           String    @default("draft") // 'draft' | 'pending_review' | 'active' | 'paused' | 'completed' | 'rejected'
+  phoneNumber      String // WA number that receives CTWA leads
+  welcomeMessage   String? // first-line ad copy shown in WhatsApp chat
+  adHeadline       String
+  adBody           String
+  adImageUrl       String?
+  adCta            String    @default("SEND_MESSAGE") // Meta CTWA CTA
+  destinationUrl   String? // optional web fallback
+  audience         String? // JSON: { ageMin, ageMax, locations, interests, gender }
+  budgetDailyPaise Int       @default(0)
+  spentPaise       Int       @default(0)
+  impressions      Int       @default(0)
+  clicks           Int       @default(0)
+  leads            Int       @default(0)
+  lastSyncedAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([businessId])
+  @@index([businessId, status])
+  @@index([metaCampaignId])
+}
+
+// ============ COEXISTENCE (5/6) ============
+// Tracks Meta WhatsApp Coexistence status — same number in personal app + Cloud API.
+// Plus: lead attribution for CTWA inbound conversations.
+
+model CoexistenceStatus {
+  id            String    @id @default(cuid())
+  businessId    String    @unique
+  enabled       Boolean   @default(false)
+  whatsappPhone String // the number being shared
+  appId         String?
+  wabaId        String?
+  verifiedAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }

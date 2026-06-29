@@ -10,18 +10,21 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 export type AIProvider = 'openai' | 'google'
 
 export interface AIContext {
+  businessId?: string  // Optional — enables knowledge-base retrieval
   businessName: string
   vertical: string
   city: string
   ownerName: string
   language: string
-  services: Array<{ name: string; durationMin: number; pricePaise: number }>
+  services: Array<{ id?: string; name: string; durationMin: number; pricePaise: number }>
   hours: Array<{ dayOfWeek: number; openTime: string; closeTime: string; closed: boolean }>
   knowledge?: string
   customerName: string
   customerPhone: string
   customerContext?: string
   availableSlots?: string[]
+  // Used for knowledge retrieval when businessId is set
+  lastUserMessage?: string
 }
 
 const SYSTEM_PROMPTS: Record<string, string> = {
@@ -29,11 +32,25 @@ const SYSTEM_PROMPTS: Record<string, string> = {
 
 NEVER make up information. If you don't know something (price, availability, specific service), say "Main is baare mein owner se confirm karke batata hoon" and offer to have them call back.
 
-Always be polite with "🙏" emoji when greeting or thanking. Use "ji" when addressing customers by name. Keep messages short - WhatsApp-friendly, not essays.`,
+Always be polite with "🙏" emoji when greeting or thanking. Use "ji" when addressing customers by name. Keep messages short - WhatsApp-friendly, not essays.
 
-  hindi: `आप एक भारतीय छोटे व्यवसाय के WhatsApp AI सहायक हैं। आप हिंदी में बात करते हैं - देवनागरी में। संदेश छोटे रखें (60 शब्दों से कम), हमेशा अपॉइंटमेंट बुक करने की तरफ बढ़ें। कभी झूठी जानकारी न दें।`,
+WHEN THE CUSTOMER WANTS TO BOOK:
+After confirming which service and date, append a single inline marker at the end of your message:
+<booking-slots serviceId="SERVICE_ID" date="YYYY-MM-DD"/>
+The system will replace this with an interactive slot picker. Never invent IDs. Use the EXACT service IDs from the SERVICES list below.`,
 
-  english: `You are the AI assistant for a small business on WhatsApp, speaking English. Keep messages brief (under 60 words), warm, and always move toward booking an appointment. Never make up information. Use emojis sparingly.`,
+  hindi: `आप एक भारतीय छोटे व्यवसाय के WhatsApp AI सहायक हैं। आप हिंदी में बात करते हैं - देवनागरी में। संदेश छोटे रखें (60 शब्दों से कम), हमेशा अपॉइंटमेंट बुक करने की तरफ बढ़ें। कभी झूठी जानकारी न दें।
+
+जब ग्राहक बुकिंग करना चाहे: सेवा और तारीख़ तय होने के बाद, संदेश के अंत में यह marker जोड़ें:
+<booking-slots serviceId="SERVICE_ID" date="YYYY-MM-DD"/>
+सिस्टम इसे interactive slot picker से बदल देगा। SERVICES सूची से सही ID उपयोग करें।`,
+
+  english: `You are the AI assistant for a small business on WhatsApp, speaking English. Keep messages brief (under 60 words), warm, and always move toward booking an appointment. Never make up information. Use emojis sparingly.
+
+WHEN THE CUSTOMER WANTS TO BOOK:
+After confirming service and date, append a single inline marker at the end of your message:
+<booking-slots serviceId="SERVICE_ID" date="YYYY-MM-DD"/>
+The system will replace this with an interactive slot picker. Use exact IDs from SERVICES below.`,
 }
 
 // ============================================================
@@ -45,21 +62,27 @@ export async function generateAIReply(
   conversationHistory: Array<{ role: 'customer' | 'assistant'; content: string }>,
   userMessage: string
 ): Promise<string> {
+  // Augment context with knowledge-base chunks if businessId is set.
+  // Cached for the duration of this call to avoid double retrieval.
+  const enriched = context.businessId
+    ? await augmentContextWithKnowledge({ ...context, lastUserMessage: userMessage })
+    : context
+
   const provider = (process.env.AI_PROVIDER || '').toLowerCase() as AIProvider | ''
 
   // Try configured providers in order: explicit choice, then auto-detect
   if (provider === 'google' || (!provider && process.env.GOOGLE_API_KEY)) {
-    const result = await tryGemini(context, conversationHistory, userMessage)
+    const result = await tryGemini(enriched, conversationHistory, userMessage)
     if (result) return result
   }
 
   if (provider === 'openai' || (!provider && process.env.OPENAI_API_KEY)) {
-    const result = await tryOpenAI(context, conversationHistory, userMessage)
+    const result = await tryOpenAI(enriched, conversationHistory, userMessage)
     if (result) return result
   }
 
   // Smart fallback (Hinglish pattern-matching)
-  return mockReply(context, userMessage)
+  return mockReply(enriched, userMessage)
 }
 
 // ============================================================
@@ -226,7 +249,7 @@ function buildSystemPrompt(context: AIContext): string {
   const base = SYSTEM_PROMPTS[context.language] || SYSTEM_PROMPTS.hinglish
 
   const servicesList = context.services
-    .map((s) => `- ${s.name}: ${s.durationMin} min, ₹${(s.pricePaise / 100).toFixed(0)}`)
+    .map((s) => `- id="${(s as any).id}" ${s.name}: ${s.durationMin} min, ₹${(s.pricePaise / 100).toFixed(0)}`)
     .join('\n')
 
   const hoursList = context.hours
@@ -261,6 +284,28 @@ CUSTOMER:
 ${context.customerContext ? `- Context: ${context.customerContext}` : ''}
 
 YOUR JOB: Help the customer book an appointment, answer questions about services/prices/hours, or escalate to the owner if needed. Be brief, warm, and move toward a booking.`
+}
+
+/**
+ * Augment the AIContext with retrieved knowledge chunks before sending to LLM.
+ * Synchronous lookup against the business's indexed KnowledgeSources.
+ * Called by callers that have a businessId and a user message.
+ */
+export async function augmentContextWithKnowledge(context: AIContext): Promise<AIContext> {
+  if (!context.businessId || !context.lastUserMessage?.trim()) return context
+  try {
+    const { retrieveKnowledge, formatKnowledgeContext } = await import('./knowledge-base')
+    const chunks = await retrieveKnowledge(context.businessId, context.lastUserMessage, 4)
+    if (chunks.length === 0) return context
+    const kbContext = formatKnowledgeContext(chunks)
+    return {
+      ...context,
+      knowledge: context.knowledge ? `${context.knowledge}\n\n${kbContext}` : kbContext,
+    }
+  } catch (err) {
+    console.error('[ai] knowledge retrieval failed:', err)
+    return context
+  }
 }
 
 function mockReply(context: AIContext, userMessage: string): string {

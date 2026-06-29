@@ -9,6 +9,7 @@ import { runBirthdayWishes } from '@/lib/automation/birthdays'
 import { runFestivalCampaigns } from '@/lib/automation/festivals'
 import { scoreUpcomingAppointments, sendConfirmationRequests, autoCancelNoShows } from '@/lib/automation/noshow'
 import { runKeyRotationCheck } from '@/lib/automation/key-rotation'
+import { runDripWorker } from '@/lib/drips'
 
 let cronStarted = false
 
@@ -37,6 +38,7 @@ export async function runScheduledJobs() {
   await scoreUpcomingAppointments()
   await sendConfirmationRequests()
   await autoCancelNoShows()
+  await runDripWorker(100)
 }
 
 // Runs at 9 AM daily

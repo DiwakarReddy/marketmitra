@@ -376,6 +376,10 @@ export interface NormalizedInbound {
   businessId?: string
   messageId?: string
   timestamp?: string | number
+  // Interactive reply metadata
+  interactiveType?: 'button' | 'list' | 'flow'
+  interactiveId?: string    // button/list id (e.g. "BOOK_2026-06-30T10:00:00Z")
+  interactiveTitle?: string // human-readable title of the choice
 }
 
 export function normalizeInboundWebhook(
@@ -417,12 +421,39 @@ function normalizeMetaInbound(payload: any): NormalizedInbound | null {
 
   if (!message) return null
 
+  let interactiveType: NormalizedInbound['interactiveType']
+  let interactiveId: string | undefined
+  let interactiveTitle: string | undefined
+  let text = ''
+  if (message.text?.body) {
+    text = message.text.body
+  } else if (message.interactive?.button_reply) {
+    interactiveType = 'button'
+    interactiveId = message.interactive.button_reply.id
+    interactiveTitle = message.interactive.button_reply.title
+    text = interactiveTitle || ''
+  } else if (message.interactive?.list_reply) {
+    interactiveType = 'list'
+    interactiveId = message.interactive.list_reply.id
+    interactiveTitle = message.interactive.list_reply.title
+    text = interactiveTitle || ''
+  } else if (message.button?.text) {
+    // Quick reply (deprecated but still possible)
+    interactiveType = 'button'
+    interactiveId = message.button.payload
+    interactiveTitle = message.button.text
+    text = message.button.text
+  }
+
   return {
     phone: `+${message.from}`,
-    message: message.text?.body || message.interactive?.button_reply?.title || '',
+    message: text,
     senderName: contact?.profile?.name || 'Customer',
     messageId: message.id,
     timestamp: message.timestamp,
+    interactiveType,
+    interactiveId,
+    interactiveTitle,
     // businessId is configured at app level for Meta — set in env
     businessId: process.env.WHATSAPP_DEFAULT_BUSINESS_ID,
   }
@@ -529,6 +560,219 @@ async function sendViaTwilio(params: SendMessageParams): Promise<SendMessageResu
       success: false,
       error: err instanceof Error ? err.message : 'Twilio send failed',
       provider: 'twilio',
+    }
+  }
+}
+
+// ============================================================
+// INTERACTIVE MESSAGES (slot pickers, confirmations, CTAs)
+// ============================================================
+// Used for in-chat booking flows: send a list of available slots as buttons
+// or list items, then handle the reply to confirm/cancel.
+
+export interface InteractiveButton {
+  id: string              // unique id, max 256 chars; webhook will receive this
+  title: string           // max 20 chars (button) or 24 chars (CTA)
+}
+
+export interface InteractiveSection {
+  title?: string
+  rows: InteractiveButton[]
+}
+
+export interface InteractivePayload {
+  type: 'button' | 'list' | 'cta_url'
+  headerText?: string
+  bodyText: string          // required
+  footerText?: string
+  buttons?: InteractiveButton[]  // for type='button' (max 3)
+  sections?: InteractiveSection[] // for type='list'
+  ctaUrl?: string           // for type='cta_url'
+  ctaLabel?: string
+}
+
+export async function sendInteractiveMessage(
+  payload: InteractivePayload,
+  context?: SendMessageContext
+): Promise<SendMessageResult & { payloadId?: string }> {
+  // Currently Meta-only
+  if (!context?.businessId) {
+    return { success: false, error: 'businessId required for interactive messages', provider: 'meta' }
+  }
+
+  const { resolveChannel } = await import('./channel-resolver')
+  const channel = await resolveChannel(context.businessId, 'whatsapp')
+  if (!channel || channel.provider !== 'meta') {
+    return { success: false, error: 'Interactive messages require Meta Cloud API', provider: 'meta' }
+  }
+
+  const accessToken = channel.credentials.accessToken
+  const phoneNumberId = channel.config.phoneNumberId
+  if (!accessToken || !phoneNumberId) {
+    return { success: false, error: 'Missing WhatsApp credentials', provider: 'meta' }
+  }
+
+  const apiVersion = process.env.WHATSAPP_API_VERSION || 'v18.0'
+  const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
+
+  // For interactive messages we need the customer's phone — passed via the to
+  // We embed to into the payload by overriding from the caller via a thread param.
+  // We expose a separate API endpoint that takes `to` so we don't change this signature too much.
+
+  // Build Meta interactive body
+  let interactive: any
+  if (payload.type === 'button') {
+    if (!payload.buttons || payload.buttons.length === 0 || payload.buttons.length > 3) {
+      return { success: false, error: 'Button type requires 1-3 buttons', provider: 'meta' }
+    }
+    interactive = {
+      type: 'button',
+      body: { text: payload.bodyText.slice(0, 1024) },
+      action: {
+        buttons: payload.buttons.map((b) => ({
+          type: 'reply',
+          reply: { id: b.id, title: b.title.slice(0, 20) },
+        })),
+      },
+    }
+  } else if (payload.type === 'list') {
+    if (!payload.sections || payload.sections.length === 0) {
+      return { success: false, error: 'List type requires sections', provider: 'meta' }
+    }
+    interactive = {
+      type: 'list',
+      body: { text: payload.bodyText.slice(0, 1024) },
+      action: {
+        button: 'Choose',
+        sections: payload.sections.map((s) => ({
+          title: s.title?.slice(0, 24) || 'Options',
+          rows: s.rows.slice(0, 10).map((r) => ({
+            id: r.id,
+            title: r.title.slice(0, 24),
+            description: undefined,
+          })),
+        })),
+      },
+    }
+  } else if (payload.type === 'cta_url') {
+    interactive = {
+      type: 'cta_url',
+      body: { text: payload.bodyText.slice(0, 1024) },
+      action: {
+        name: 'cta_url',
+        parameters: { display_text: payload.ctaLabel?.slice(0, 20) || 'Open', url: payload.ctaUrl },
+      },
+    }
+  } else {
+    return { success: false, error: 'Unknown interactive type', provider: 'meta' }
+  }
+
+  if (payload.headerText) interactive.header = { type: 'text', text: payload.headerText.slice(0, 60) }
+  if (payload.footerText) interactive.footer = { text: payload.footerText.slice(0, 60) }
+
+  // Return the URL/method/payload — caller (booking API) sends with `to`
+  // We intentionally don't send here to keep the signature simple; the booking API
+  // calls the lower-level fetch itself.
+
+  return {
+    success: true,
+    provider: 'meta',
+    mocked: false,
+    // Note: caller must use sendInteractiveToNumber to actually send
+  } as any
+}
+
+/**
+ * Low-level: send an interactive message to a specific phone number.
+ * Returns the Meta API response including messageId.
+ */
+export async function sendInteractiveToNumber(
+  to: string,
+  payload: InteractivePayload,
+  context: SendMessageContext
+): Promise<SendMessageResult> {
+  if (!context?.businessId) return { success: false, error: 'businessId required', provider: 'meta' }
+  const { resolveChannel } = await import('./channel-resolver')
+  const channel = await resolveChannel(context.businessId, 'whatsapp')
+  if (!channel || channel.provider !== 'meta' || !channel.credentials?.accessToken || !channel.config?.phoneNumberId) {
+    return { success: false, error: 'Meta Cloud API not configured', provider: 'meta' }
+  }
+
+  let interactive: any
+  if (payload.type === 'button') {
+    interactive = {
+      type: 'button',
+      body: { text: payload.bodyText.slice(0, 1024) },
+      action: {
+        buttons: (payload.buttons || []).slice(0, 3).map((b) => ({
+          type: 'reply',
+          reply: { id: b.id, title: b.title.slice(0, 20) },
+        })),
+      },
+    }
+  } else if (payload.type === 'list') {
+    interactive = {
+      type: 'list',
+      body: { text: payload.bodyText.slice(0, 1024) },
+      action: {
+        button: 'Choose',
+        sections: (payload.sections || []).slice(0, 10).map((s) => ({
+          title: s.title?.slice(0, 24) || 'Options',
+          rows: s.rows.slice(0, 10).map((r) => ({
+            id: r.id,
+            title: r.title.slice(0, 24),
+          })),
+        })),
+      },
+    }
+  } else if (payload.type === 'cta_url') {
+    interactive = {
+      type: 'cta_url',
+      body: { text: payload.bodyText.slice(0, 1024) },
+      action: {
+        name: 'cta_url',
+        parameters: { display_text: payload.ctaLabel?.slice(0, 20) || 'Open', url: payload.ctaUrl || '' },
+      },
+    }
+  } else {
+    return { success: false, error: 'Unknown interactive type', provider: 'meta' }
+  }
+  if (payload.headerText) interactive.header = { type: 'text', text: payload.headerText.slice(0, 60) }
+  if (payload.footerText) interactive.footer = { text: payload.footerText.slice(0, 60) }
+
+  const apiVersion = process.env.WHATSAPP_API_VERSION || 'v18.0'
+  const url = `https://graph.facebook.com/${apiVersion}/${channel.config.phoneNumberId}/messages`
+
+  const body = {
+    messaging_product: 'whatsapp',
+    to: to.replace(/\D/g, ''),
+    type: 'interactive',
+    interactive,
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${channel.credentials.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (res.ok && data.messages?.[0]?.id) {
+      return { success: true, messageId: data.messages[0].id, provider: 'meta' }
+    }
+    return {
+      success: false,
+      error: data.error?.message || `Meta returned ${res.status}`,
+      provider: 'meta',
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Interactive send failed',
+      provider: 'meta',
     }
   }
 }

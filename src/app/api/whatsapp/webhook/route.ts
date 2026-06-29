@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
     inbound.businessId = businessId
 
     // Process the message (rest is the same as before)
-    return await processInboundMessage(businessId, inbound, detectedProvider)
+    return await processInboundMessage(businessId, inbound, detectedProvider, body)
   } catch (err: any) {
     console.error('[WhatsApp webhook] error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
@@ -214,7 +214,29 @@ function verifyPerTenantSignature(rawBody: string, signature: string, secret: st
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided))
 }
 
-async function processInboundMessage(businessId: string, inbound: any, provider: string) {
+async function processInboundMessage(businessId: string, inbound: any, provider: string, rawPayload?: any) {
+  // Handle interactive booking button reply: BOOK_<serviceId>_<slotIso>
+  if (inbound.interactiveType === 'button' && inbound.interactiveId?.startsWith('BOOK_')) {
+    const parts = inbound.interactiveId.split('_')
+    if (parts.length >= 3) {
+      const serviceId = parts[1]
+      const slotIso = parts.slice(2).join('_')  // ISO can contain colons
+      try {
+        // Call our own confirm endpoint (in-process to avoid HTTP roundtrip)
+        const customer = await prisma.customer.findUnique({
+          where: { businessId_phone: { businessId, phone: inbound.phone } },
+        })
+        if (customer) {
+          await handleBookingConfirm(businessId, inbound.phone, slotIso, serviceId, customer.name)
+          // Don't run AI for booking confirmations — they're handled directly
+          return NextResponse.json({ ok: true, action: 'booked' })
+        }
+      } catch (err) {
+        console.error('[whatsapp webhook] booking button failed:', err)
+      }
+    }
+  }
+
   const business = await prisma.business.findUnique({
     where: { id: businessId },
     include: { services: { where: { active: true } }, hours: true },
@@ -269,6 +291,67 @@ async function processInboundMessage(businessId: string, inbound: any, provider:
     },
   })
 
+  // CTWA attribution: if inbound came from a Click-to-WhatsApp ad, mark customer
+  // source + tag so analytics + drips can filter on it.
+  try {
+    const { detectCtwaReferral } = await import('@/lib/ctwa')
+    const ref = detectCtwaReferral(rawPayload || {})
+    if (ref.isCtwa && ref.adId) {
+      const existingTags = customer.tags ? JSON.parse(customer.tags) : []
+      if (!existingTags.includes('ctwa_lead')) {
+        existingTags.push('ctwa_lead')
+      }
+      await prisma.customer.update({
+        where: { id: customer.id },
+        data: {
+          source: 'ctwa',
+          tags: JSON.stringify(existingTags),
+        },
+      })
+      // Bump CTWA leads counter on the matching campaign
+      await prisma.cTWACampaign.updateMany({
+        where: { metaAdId: ref.adId, businessId },
+        data: { leads: { increment: 1 } },
+      })
+      // Create or update Lead record
+      await prisma.lead.create({
+        data: {
+          businessId,
+          customerId: customer.id,
+          source: 'ctwa',
+          status: 'new',
+          notes: ref.adId ? `CTWA ad: ${ref.adId}` : 'CTWA',
+        },
+      })
+      // Trigger lead_captured drip
+      try {
+        const { triggerDripsForEvent } = await import('@/lib/drips')
+        await triggerDripsForEvent(businessId, 'lead_captured', customer.id)
+      } catch (err) { /* ignore */ }
+    }
+  } catch (err) {
+    console.warn('[whatsapp webhook] CTWA attribution failed:', err)
+  }
+
+  // Customer replied → stop all active drip enrollments for them
+  // (We don't want automated drips racing against a live conversation.)
+  try {
+    const { stopAllEnrollments } = await import('@/lib/drips')
+    await stopAllEnrollments(customer.id, 'replied')
+  } catch (err) {
+    console.warn('[whatsapp webhook] failed to stop drips:', err)
+  }
+
+  // If this was a new customer, fire 'new_customer' drips
+  if (customer.createdAt && Date.now() - new Date(customer.createdAt).getTime() < 60_000) {
+    try {
+      const { triggerDripsForEvent } = await import('@/lib/drips')
+      await triggerDripsForEvent(businessId, 'new_customer', customer.id)
+    } catch (err) {
+      console.warn('[whatsapp webhook] failed to trigger new_customer drip:', err)
+    }
+  }
+
   // Generate AI reply
   const history = await prisma.message.findMany({
     where: { conversationId: conversation.id },
@@ -283,6 +366,7 @@ async function processInboundMessage(businessId: string, inbound: any, provider:
     ownerName: business.ownerName,
     language: customer.language || business.language,
     services: business.services.map((s) => ({
+      id: s.id,
       name: s.name,
       durationMin: s.durationMin,
       pricePaise: s.pricePaise,
@@ -335,5 +419,162 @@ async function processInboundMessage(businessId: string, inbound: any, provider:
     })
   }
 
+  // Check if AI reply contains a booking-slots intent marker.
+  // Pattern: <booking-slots serviceId="..." date="YYYY-MM-DD"/>
+  // When detected, send an interactive slot picker as a follow-up.
+  const bookingMatch = aiReply.match(/<booking-slots\s+serviceId="([^"]+)"\s+date="([^"]+)"\s*\/?>/)
+  if (bookingMatch) {
+    const [, serviceId, date] = bookingMatch
+    try {
+      const { sendInteractiveToNumber } = await import('@/lib/whatsapp')
+      const service = await prisma.service.findUnique({
+        where: { id: serviceId },
+        select: { name: true, durationMin: true, businessId: true },
+      })
+      if (service && service.businessId === businessId) {
+        // Re-use slots API logic inline
+        const dateObj = new Date(date)
+        const dayOfWeek = dateObj.getDay()
+        const hours = await prisma.businessHour.findUnique({
+          where: { businessId_dayOfWeek: { businessId, dayOfWeek } },
+        })
+        if (hours && !hours.closed) {
+          const [openH, openM] = hours.openTime.split(':').map(Number)
+          const [closeH, closeM] = hours.closeTime.split(':').map(Number)
+          const dayStart = new Date(dateObj); dayStart.setHours(openH, openM, 0, 0)
+          const dayEnd = new Date(dateObj); dayEnd.setHours(closeH, closeM, 0, 0)
+          const candidates: string[] = []
+          let cursor = new Date(dayStart)
+          const intervalMin = service.durationMin + 15
+          const now = new Date()
+          while (cursor.getTime() + service.durationMin * 60000 <= dayEnd.getTime()) {
+            if (cursor > now) candidates.push(cursor.toISOString())
+            cursor = new Date(cursor.getTime() + intervalMin * 60000)
+          }
+          const booked = await prisma.appointment.findMany({
+            where: { businessId, status: { in: ['booked', 'confirmed'] }, startsAt: { gte: dayStart.toISOString(), lt: dayEnd.toISOString() } },
+            select: { startsAt: true, endsAt: true },
+          })
+          const available = candidates.filter((iso) => {
+            const s = new Date(iso).getTime(), e = s + service.durationMin * 60000
+            return !booked.some((a) => s < new Date(a.endsAt).getTime() && e > new Date(a.startsAt).getTime())
+          }).slice(0, 10)
+          if (available.length > 0) {
+            const dateLabel = dateObj.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+            await sendInteractiveToNumber(
+              inbound.phone,
+              {
+                type: 'list',
+                headerText: `📅 ${dateLabel}`,
+                bodyText: `${service.name} (${service.durationMin} min). Pick a slot:`,
+                footerText: 'Tap to confirm',
+                sections: [{
+                  title: 'Available times',
+                  rows: available.map((iso) => {
+                    const d = new Date(iso)
+                    return {
+                      id: `BOOK_${serviceId}_${iso}`,
+                      title: d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }),
+                      description: `${service.durationMin} min`,
+                    }
+                  }),
+                }],
+              },
+              { businessId }
+            )
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[whatsapp webhook] failed to send slot picker:', err)
+    }
+  }
+
   return NextResponse.json({ ok: true, conversationId: conversation.id, aiReplied: true })
+}
+
+// ============================================================
+// BOOKING CONFIRM HELPER (called inline from interactive button handler)
+// ============================================================
+
+async function handleBookingConfirm(
+  businessId: string,
+  phone: string,
+  slotIso: string,
+  serviceId: string,
+  customerName: string
+) {
+  const slotStart = new Date(slotIso)
+  if (Number.isNaN(slotStart.getTime())) throw new Error('Invalid slotIso')
+
+  const service = await prisma.service.findUnique({
+    where: { id: serviceId },
+    select: { name: true, durationMin: true, businessId: true },
+  })
+  if (!service || service.businessId !== businessId) throw new Error('Service mismatch')
+
+  // Check slot still free
+  const conflict = await prisma.appointment.findFirst({
+    where: { businessId, serviceId, startsAt: slotStart, status: { in: ['booked', 'confirmed'] } },
+  })
+  if (conflict) {
+    await sendWhatsAppMessage(
+      { to: phone, message: `Sorry, that slot was just taken. Please pick another time. 🙏` },
+      { businessId }
+    )
+    return
+  }
+
+  let customer = await prisma.customer.findUnique({
+    where: { businessId_phone: { businessId, phone } },
+  })
+  if (!customer) {
+    customer = await prisma.customer.create({
+      data: { businessId, phone, name: customerName || 'WhatsApp customer', tags: JSON.stringify(['whatsapp_booking']) },
+    })
+  }
+
+  const slotEnd = new Date(slotStart.getTime() + service.durationMin * 60000)
+  await prisma.appointment.create({
+    data: {
+      businessId,
+      customerId: customer.id,
+      serviceId,
+      startsAt: slotStart,
+      endsAt: slotEnd,
+      source: 'whatsapp_interactive',
+      status: 'booked',
+    },
+  })
+
+  // Save inbound message + AI-style "system" outbound
+  const conversation = await prisma.conversation.findFirst({
+    where: { businessId, customerId: customer.id, channel: 'whatsapp' },
+    orderBy: { lastMessageAt: 'desc' },
+  })
+  if (conversation) {
+    await prisma.message.create({
+      data: { conversationId: conversation.id, direction: 'inbound', sender: 'customer', content: `Tapped: ${customerName}` },
+    })
+  }
+
+  const dateLabel = slotStart.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })
+  const timeLabel = slotStart.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+  await sendWhatsAppMessage(
+    {
+      to: phone,
+      message: `✅ Booked! ${service.name} on ${dateLabel} at ${timeLabel}. Reply RESCHEDULE or CANCEL if you need to change.`,
+    },
+    { businessId }
+  )
+
+  await prisma.activity.create({
+    data: {
+      businessId,
+      type: 'appointment_booked',
+      actor: 'customer',
+      title: 'Booked via WhatsApp',
+      description: `${service.name} at ${timeLabel} on ${dateLabel}`,
+    },
+  })
 }

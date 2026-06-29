@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
+import { CustomerFieldsSection } from '@/components/customer-fields-section'
 import { Search, Users, Tag, Trash2, Mail, MessageSquare, Edit2, X, CheckSquare, Square, Filter, Cake, Heart, Sparkles, Phone, Loader2, Download } from 'lucide-react'
 
 interface Customer {
@@ -402,6 +403,9 @@ function CustomerEditModal({ customer, onClose, onSave }: { customer: Customer; 
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
             />
+          </div>
+          <div className="p-3 border border-ink-100 rounded-lg bg-ink-50/30">
+            <CustomerFieldsSection customerId={customer.id} />
           </div>
           <div className="flex items-center justify-between p-3 bg-ink-50 rounded-lg">
             <div>

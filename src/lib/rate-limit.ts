@@ -74,6 +74,13 @@ export const RATE_LIMITS = {
   // Per-tenant
   sendMessage:    { windowMs: 60 * 1000, max: 100 },         // 100 msgs/min per business
   login:          { windowMs: 15 * 60 * 1000, max: 5 },     // 5 login attempts per 15 min
+  // Custom Fields / Knowledge / Drips / CTWA — generous (these aren't sensitive)
+  customFieldCreate: { windowMs: 60 * 1000, max: 30 },
+  customFieldUpdate: { windowMs: 60 * 1000, max: 60 },
+  knowledgeIngest:   { windowMs: 60 * 1000, max: 10 },
+  knowledgeUpload:   { windowMs: 60 * 1000, max: 5 },
+  dripCreate:        { windowMs: 60 * 1000, max: 10 },
+  ctwaCreate:        { windowMs: 60 * 1000, max: 5 },
 }
 
 // Helper to apply in an API route
