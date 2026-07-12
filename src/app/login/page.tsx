@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { signIn } from 'next-auth/react'
+import { signIn, useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -11,8 +11,19 @@ import { Shield, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { status: sessionStatus } = useSession()
   const [email, setEmail] = useState('priya@smilecare.demo')
   const [password, setPassword] = useState('demo1234')
+
+  // If a valid session already exists when the user lands on /login (e.g. they
+  // refreshed the page or came back to the tab), send them straight into the
+  // app so they don't have to re-authenticate. This is what "context should be
+  // maintained on refresh" means.
+  useEffect(() => {
+    if (sessionStatus === 'authenticated') {
+      router.replace('/dashboard')
+    }
+  }, [sessionStatus, router])
   const [twoFactorCode, setTwoFactorCode] = useState(['', '', '', '', '', ''])
   const [needs2fa, setNeeds2fa] = useState(false)
   const [loading, setLoading] = useState(false)

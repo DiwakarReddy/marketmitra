@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter, Noto_Sans_Devanagari, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
+import { Providers } from '@/components/providers'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const deva = Noto_Sans_Devanagari({ subsets: ['devanagari'], weight: ['400', '500', '600', '700'], variable: '--font-deva' })
@@ -15,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${inter.variable} ${deva.variable} ${mono.variable}`}>
       <body className="font-sans antialiased">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   )
