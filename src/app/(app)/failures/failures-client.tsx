@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/confirm-dialog'
 import { RefreshCw, AlertCircle, CheckCircle2, Loader2, Trash2, BarChart3 } from 'lucide-react'
 
 interface Failure {
@@ -22,6 +23,7 @@ interface Failure {
 }
 
 export function FailuresClient({ initialFailures, stats }: { initialFailures: Failure[]; stats: { total: number; resolved: number; byType: any[] } }) {
+  const { confirm } = useConfirm()
   const { toast } = useToast()
   const [failures, setFailures] = useState(initialFailures)
   const [retrying, setRetrying] = useState<string | null>(null)
@@ -159,7 +161,12 @@ export function FailuresClient({ initialFailures, stats }: { initialFailures: Fa
                         Retry now
                       </Button>
                       <Button size="sm" variant="ghost" className="text-red-600" onClick={async () => {
-                        if (!confirm('Mark as dead (give up)?')) return
+                        if (!(await confirm({
+                          title: 'Mark as dead (give up)?',
+                          message: 'This failure will be archived and no further retries will be attempted. You can still view it from the archive.',
+                          confirmText: 'Mark as dead',
+                          destructive: true,
+                        }))) return
                         await fetch(`/api/failures/${f.id}`, { method: 'DELETE' })
                         setFailures(failures.filter((x) => x.id !== f.id))
                       }}>

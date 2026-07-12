@@ -10,6 +10,7 @@ import { t } from '@/lib/i18n'
 import { BusinessCardClient } from '@/components/business-card-client'
 import { canConnectChannel } from '@/lib/plan-features'
 import { SUPPORTED_LANGUAGES } from '@/lib/i18n'
+import { useConfirm } from '@/components/confirm-dialog'
 import {
   LayoutDashboard,
   Megaphone,
@@ -97,11 +98,18 @@ export function Sidebar({
   // JWT in the background, so a manual page refresh keeps the user signed in
   // and our UI stays in sync (e.g. user avatar / name updates).
   const { status: sessionStatus } = useSession()
+  const { confirm } = useConfirm()
   const [signingOut, setSigningOut] = useState(false)
 
   const handleSignOut = async () => {
     if (signingOut) return
-    if (!confirm('Sign out of MarketMitra on this device?')) return
+    const ok = await confirm({
+      title: 'Sign out of MarketMitra?',
+      message: 'You will be signed out of this device. You can sign back in any time.',
+      confirmText: 'Sign out',
+      cancelText: 'Stay',
+    })
+    if (!ok) return
     setSigningOut(true)
     try {
       // signOut() from next-auth/react hits /api/auth/signout, clears the

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/confirm-dialog'
 import { Save, Star, Gift, Calendar, TrendingUp, AlertTriangle, MessageCircle, CheckCircle2, XCircle, Loader2, Download, Trash2, Mail, Bell, Globe, Lock, ArrowUpRight, FileText, Shield } from 'lucide-react'
 import { IntegrationsCard } from '@/components/integrations-card'
 import { TwoFactorSetupModal } from './two-factor-setup-modal'
@@ -52,6 +53,7 @@ const TIMEZONES = [
 ]
 
 export function SettingsClient({ business }: { business: BusinessData }) {
+  const { confirm } = useConfirm()
   const { toast } = useToast()
   const [saving, setSaving] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -323,7 +325,12 @@ export function SettingsClient({ business }: { business: BusinessData }) {
               variant={twoFactorEnabled ? 'outline' : 'brand'}
               onClick={async () => {
                 if (twoFactorEnabled) {
-                  if (!confirm('Disable 2FA? You will only need your password to log in.')) return
+                  if (!(await confirm({
+                    title: 'Disable two-factor authentication?',
+                    message: 'You will only need your password to log in. Anyone with your password will be able to sign in to your account.',
+                    confirmText: 'Disable 2FA',
+                    destructive: true,
+                  }))) return
                   const res = await fetch('/api/settings/2fa', { method: 'DELETE' })
                   if (res.ok) {
                     setTwoFactorEnabled(false)
@@ -473,7 +480,12 @@ export function SettingsClient({ business }: { business: BusinessData }) {
               <div className="text-xs text-ink-500">Stop all AI automations. Customers can still view widget but AI won't respond.</div>
             </div>
             <Button size="sm" variant="outline" onClick={async () => {
-              if (!confirm('Pause all AI automations?')) return
+              if (!(await confirm({
+                title: 'Pause all AI automations?',
+                message: 'All campaigns, drips, auto-replies and AI workflows will stop running. Customers will not receive any automated messages until you resume.',
+                confirmText: 'Pause all',
+                destructive: true,
+              }))) return
               const res = await fetch('/api/settings/pause', { method: 'POST' })
               if (res.ok) toast({ title: 'Account paused', variant: 'success' })
             }}>Pause</Button>
@@ -484,7 +496,12 @@ export function SettingsClient({ business }: { business: BusinessData }) {
               <div className="text-xs text-red-700">Permanently delete all data. Cannot be undone.</div>
             </div>
             <Button size="sm" variant="destructive" onClick={async () => {
-              if (!confirm('This will permanently delete your business and all data. Continue?')) return
+              if (!(await confirm({
+                title: 'Permanently delete your business?',
+                message: 'This will erase your business and ALL its data — customers, appointments, conversations, campaigns, drips, templates, knowledge base, billing history. This cannot be undone.',
+                confirmText: 'Yes, delete forever',
+                destructive: true,
+              }))) return
               const res = await fetch('/api/settings/delete', { method: 'POST' })
               if (res.ok) window.location.href = '/'
             }}>

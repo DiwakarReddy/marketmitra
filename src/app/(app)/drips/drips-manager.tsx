@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/confirm-dialog'
 import {
   Mail, Plus, Trash2, Edit3, Play, Pause, Archive, ArrowRight, ArrowLeft,
   Loader2, Sparkles, X, Save, Clock, Users, CheckCircle2, AlertCircle, Send, ChevronRight
@@ -48,6 +49,7 @@ function parseTriggerConfig(s: string | null | undefined): Record<string, any> {
 }
 
 export function DripsManager() {
+  const { confirm } = useConfirm()
   const { toast } = useToast()
   const [sequences, setSequences] = useState<DripSequence[]>([])
   const [loading, setLoading] = useState(true)
@@ -66,7 +68,12 @@ export function DripsManager() {
   }
 
   const remove = async (s: DripSequence) => {
-    if (!confirm(`Delete sequence "${s.name}"? All enrollments will be lost.`)) return
+    if (!(await confirm({
+      title: `Delete sequence "${s.name}"?`,
+      message: 'All enrollments and execution history for this sequence will be permanently removed. Customers currently enrolled will not receive any further messages from this sequence.',
+      confirmText: 'Delete sequence',
+      destructive: true,
+    }))) return
     try {
       await fetch(`/api/drips/sequences/${s.id}`, { method: 'DELETE' })
       toast({ title: 'Deleted', variant: 'success' })

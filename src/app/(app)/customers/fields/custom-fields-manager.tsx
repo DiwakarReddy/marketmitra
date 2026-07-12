@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/confirm-dialog'
 import { Plus, Trash2, Save, Loader2, X, Hash, Type, Calendar, ListChecks, CheckSquare, ToggleLeft, GripVertical } from 'lucide-react'
 
 interface CustomField {
@@ -31,6 +32,7 @@ const TYPE_META = {
 } as const
 
 export function CustomFieldsManager() {
+  const { confirm } = useConfirm()
   const { toast } = useToast()
   const [fields, setFields] = useState<CustomField[]>([])
   const [loading, setLoading] = useState(true)
@@ -116,7 +118,12 @@ export function CustomFieldsManager() {
   }
 
   const remove = async (f: CustomField) => {
-    if (!confirm(`Delete "${f.label}"? All customer values for this field will be lost.`)) return
+    if (!(await confirm({
+      title: `Delete "${f.label}"?`,
+      message: 'All customer values for this field will be lost. Any AI prompt, template or drip referencing this field will fail validation until removed.',
+      confirmText: 'Delete field',
+      destructive: true,
+    }))) return
     try {
       const res = await fetch(`/api/custom-fields/${f.id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Delete failed')
