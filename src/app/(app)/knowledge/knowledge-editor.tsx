@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/confirm-dialog'
 import {
   BookOpen, Plus, FileText, Globe, Upload as UploadIcon, MessageCircleQuestion,
   Trash2, Save, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, Search,
@@ -44,6 +45,7 @@ const TYPE_LABELS = {
 } as const
 
 export function KnowledgeManager() {
+  const { confirm } = useConfirm()
   const { toast } = useToast()
   const [sources, setSources] = useState<KnowledgeSource[]>([])
   const [loading, setLoading] = useState(true)
@@ -131,7 +133,12 @@ export function KnowledgeManager() {
   }
 
   const remove = async (s: KnowledgeSource) => {
-    if (!confirm(`Remove "${s.title}"? AI will stop using it for replies.`)) return
+    if (!(await confirm({
+      title: `Remove "${s.title}"?`,
+      message: 'The AI will stop using this source for replies immediately. Existing conversations are not affected.',
+      confirmText: 'Remove',
+      destructive: true,
+    }))) return
     try {
       await fetch(`/api/knowledge/sources/${s.id}`, { method: 'DELETE' })
       toast({ title: 'Removed', variant: 'success' })

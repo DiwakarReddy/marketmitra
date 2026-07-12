@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card'
 
 export default function SignupPage() {
   const router = useRouter()
+  const { status: sessionStatus } = useSession()
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -19,6 +21,15 @@ export default function SignupPage() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // If a valid session already exists when the user lands on /signup (e.g. they
+  // refreshed the page or came back to the tab), send them straight into the
+  // app so they don't have to sign up again.
+  useEffect(() => {
+    if (sessionStatus === 'authenticated') {
+      router.replace('/dashboard')
+    }
+  }, [sessionStatus, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

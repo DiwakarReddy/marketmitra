@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/confirm-dialog'
 import { Plus, Sparkles, Calendar, X, Loader2, MessageSquare, Mic, Image as ImageIcon, TrendingUp, Send, Eye, Users, IndianRupee, BarChart3, FlaskConical, Megaphone, Trash2, Info, Edit3 } from 'lucide-react'
 
 interface Campaign {
@@ -48,6 +49,7 @@ const STATUS_VARIANT: Record<string, any> = {
 }
 
 export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campaign[] }) {
+  const { confirm } = useConfirm()
   const { toast } = useToast()
   const [campaigns, setCampaigns] = useState(initialCampaigns)
   const [creating, setCreating] = useState(false)
@@ -226,7 +228,12 @@ export function CampaignsClient({ initialCampaigns }: { initialCampaigns: Campai
   }
 
   async function deleteCampaign(c: Campaign) {
-    if (!confirm(`Delete campaign "${c.name}"? This cannot be undone.`)) return
+    if (!(await confirm({
+      title: `Delete campaign "${c.name}"?`,
+      message: 'The campaign, its analytics, and any scheduled sends will be permanently removed. This cannot be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    }))) return
     try {
       const res = await fetch(`/api/campaigns/${c.id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Delete failed')
@@ -720,6 +727,7 @@ function CampaignDetailModal({
   onSent: (c: Campaign) => void
 }) {
   const { toast } = useToast()
+  const { confirm } = useConfirm()
   const [edit, setEdit] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
@@ -775,7 +783,12 @@ function CampaignDetailModal({
   }
 
   const remove = async () => {
-    if (!confirm('Delete this campaign?')) return
+    if (!(await confirm({
+      title: 'Delete this campaign?',
+      message: 'This cannot be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    }))) return
     try {
       const res = await fetch(`/api/campaigns/${campaign.id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Delete failed')

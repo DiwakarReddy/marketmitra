@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
 import { CustomerFieldsSection } from '@/components/customer-fields-section'
+import { useConfirm } from '@/components/confirm-dialog'
 import { Search, Users, Tag, Trash2, Mail, MessageSquare, Edit2, X, CheckSquare, Square, Filter, Cake, Heart, Sparkles, Phone, Loader2, Download } from 'lucide-react'
 
 interface Customer {
@@ -29,6 +30,7 @@ interface Customer {
 
 export function CustomersClient({ initialCustomers }: { initialCustomers: Customer[] }) {
   const { toast } = useToast()
+  const { confirm, prompt } = useConfirm()
   const [customers, setCustomers] = useState(initialCustomers)
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
@@ -194,8 +196,16 @@ export function CustomersClient({ initialCustomers }: { initialCustomers: Custom
           {selected.size > 0 && (
             <div className="flex items-center gap-2 p-3 bg-teal-50 border border-teal-200 rounded-lg">
               <span className="text-sm font-semibold text-teal-900">{selected.size} selected</span>
-              <Button size="sm" variant="outline" onClick={() => {
-                const tag = prompt('Enter tag name:')
+              <Button size="sm" variant="outline" onClick={async () => {
+                const tag = await prompt({
+                  title: 'Add tag to selected',
+                  message: `Tag will be added to ${selected.size} customer${selected.size === 1 ? '' : 's'}.`,
+                  defaultValue: '',
+                  placeholder: 'e.g. vip, hair-treatments, birthday-month',
+                  confirmText: 'Add tag',
+                  required: true,
+                })
+                if (!tag) return
                 if (tag) bulkAction('tag', tag)
               }} disabled={bulkActionLoading}>
                 <Tag className="w-3 h-3" />Add tag
@@ -203,8 +213,13 @@ export function CustomersClient({ initialCustomers }: { initialCustomers: Custom
               <Button size="sm" variant="outline" onClick={() => bulkAction('message')} disabled={bulkActionLoading}>
                 <MessageSquare className="w-3 h-3" />Message
               </Button>
-              <Button size="sm" variant="outline" onClick={() => {
-                if (confirm(`Delete ${selected.size} customers?`)) bulkAction('delete')
+              <Button size="sm" variant="outline" onClick={async () => {
+                if (await confirm({
+                  title: `Delete ${selected.size} customer${selected.size === 1 ? '' : 's'}?`,
+                  message: 'This will permanently remove their appointments, conversations, tags and history. This cannot be undone.',
+                  confirmText: 'Delete',
+                  destructive: true,
+                })) bulkAction('delete')
               }} disabled={bulkActionLoading} className="text-red-600 border-red-200 hover:bg-red-50">
                 <Trash2 className="w-3 h-3" />Delete
               </Button>

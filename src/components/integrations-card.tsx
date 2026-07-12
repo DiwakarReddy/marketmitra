@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
 import { Zap, CheckCircle2, XCircle, Loader2, Settings as SettingsIcon, Trash2, Send, Clock, KeyRound, Shield, AlertTriangle } from 'lucide-react'
 import { CredentialsModal } from '@/components/credentials-modal'
+import { useConfirm } from '@/components/confirm-dialog'
 
 interface ChannelData {
   channel: string
@@ -34,6 +35,7 @@ interface ChannelData {
 }
 
 export function IntegrationsCard({ onChange }: { onChange: () => void }) {
+  const { confirm } = useConfirm()
   const { toast } = useToast()
   const [channels, setChannels] = useState<ChannelData[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,7 +65,14 @@ export function IntegrationsCard({ onChange }: { onChange: () => void }) {
   }
 
   const disconnect = async (channel: string) => {
-    if (!confirm(`Disconnect ${channel}?`)) return
+    const ok = await confirm({
+      title: `Disconnect ${channel}?`,
+      message: 'The integration will be removed and any features that depend on it will stop working until reconnected.',
+      confirmText: 'Disconnect',
+      cancelText: 'Cancel',
+      destructive: true,
+    })
+    if (!ok) return
     setBusy(channel)
     try {
       await fetch(`/api/channels/${channel}`, { method: 'DELETE' })

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/confirm-dialog'
 import {
   Plus, Trash2, Eye, EyeOff, Save, X, Sparkles, Loader2,
   Mail, MessageSquare, Smartphone, Hash, Layers,
@@ -48,6 +49,7 @@ const CHANNEL_META: Record<Channel, { label: string; icon: any; color: string; c
 }
 
 export function TemplatesClient() {
+  const { confirm, prompt } = useConfirm()
   const { toast } = useToast()
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
@@ -201,6 +203,7 @@ function TemplateCard({
   onDeleted: () => void
 }) {
   const { toast } = useToast()
+  const { confirm } = useConfirm()
   const [showPreview, setShowPreview] = useState(false)
   const [name, setName] = useState(template.name)
   const [description, setDescription] = useState(template.description || '')
@@ -251,7 +254,11 @@ function TemplateCard({
   }
 
   const archive = async () => {
-    if (!confirm(`Archive "${template.name}"? You can restore it later from the archive.`)) return
+    if (!(await confirm({
+      title: `Archive "${template.name}"?`,
+      message: 'The template will be hidden from your active templates. You can restore it later from the archive.',
+      confirmText: 'Archive',
+    }))) return
     const res = await fetch(`/api/templates/${template.id}`, { method: 'DELETE' })
     if (res.ok) {
       toast({ title: 'Archived', variant: 'success' })
@@ -540,6 +547,7 @@ function AIGenerateModal({
   defaultChannel: Channel
 }) {
   const { toast } = useToast()
+  const { prompt } = useConfirm()
   const [channel, setChannel] = useState<Channel>(defaultChannel || 'whatsapp')
   const [category, setCategory] = useState<Category>('marketing')
   const [purpose, setPurpose] = useState('')
@@ -569,7 +577,14 @@ function AIGenerateModal({
 
   const saveAs = async () => {
     if (!result) return
-    const name = prompt('Name this template:', result.name || purpose.slice(0, 50))
+    const name = await prompt({
+      title: 'Save AI-generated template',
+      message: 'Give it a memorable name so you can find it later.',
+      defaultValue: result.name || purpose.slice(0, 50),
+      placeholder: 'e.g. Welcome new patient — Hinglish',
+      confirmText: 'Save',
+      required: true,
+    })
     if (!name) return
     try {
       const payload: any = { ...result, name, channel, category, status: 'active' }

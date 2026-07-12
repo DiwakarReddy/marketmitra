@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/confirm-dialog'
 import {
   Megaphone, Plus, Trash2, Edit3, Play, Pause, Eye, MousePointerClick,
   DollarSign, Users, Loader2, X, Save, ExternalLink, TrendingUp, RefreshCw,
@@ -34,6 +35,7 @@ interface CTWACampaign {
 }
 
 export function CTWAManager() {
+  const { confirm } = useConfirm()
   const { toast } = useToast()
   const [campaigns, setCampaigns] = useState<CTWACampaign[]>([])
   const [loading, setLoading] = useState(true)
@@ -80,7 +82,11 @@ export function CTWAManager() {
   }
 
   const remove = async (c: CTWACampaign) => {
-    if (!confirm(`Archive "${c.name}"? Ad will be paused in Meta (we don't delete delivered ads).`)) return
+    if (!(await confirm({
+      title: `Archive "${c.name}"?`,
+      message: 'The ad will be paused in Meta. Already-delivered ads are not deleted from Meta — only from your MarketMitra dashboard.',
+      confirmText: 'Archive',
+    }))) return
     try {
       await fetch(`/api/ctwa/campaigns/${c.id}`, { method: 'DELETE' })
       toast({ title: 'Archived', variant: 'success' })

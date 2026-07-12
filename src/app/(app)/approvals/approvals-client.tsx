@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/toast'
+import { useConfirm } from '@/components/confirm-dialog'
 import { CheckCircle2, X, Calendar as CalIcon, Loader2, Edit2, MessageSquare, Mic, Image as ImageIcon, Megaphone } from 'lucide-react'
 
 interface Approval {
@@ -25,6 +26,7 @@ const TYPE_ICONS: Record<string, any> = {
 }
 
 export function ApprovalsClient({ initialApprovals }: { initialApprovals: Approval[] }) {
+  const { prompt } = useConfirm()
   const { toast } = useToast()
   const [approvals, setApprovals] = useState(initialApprovals)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -78,8 +80,14 @@ export function ApprovalsClient({ initialApprovals }: { initialApprovals: Approv
     }
   }
 
-  const editMessage = (a: Approval) => {
-    const newMsg = prompt('Edit message:', a.preview)
+  const editMessage = async (a: Approval) => {
+    const newMsg = await prompt({
+      title: 'Edit message',
+      defaultValue: a.preview,
+      placeholder: 'Type the updated message…',
+      confirmText: 'Save edit',
+      required: true,
+    })
     if (newMsg) {
       toast({ title: 'Message updated (refresh to see)', variant: 'success' })
     }
@@ -158,8 +166,15 @@ export function ApprovalsClient({ initialApprovals }: { initialApprovals: Approv
                             {busy === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
                             Approve & send
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => {
-                            const time = prompt('Schedule for (YYYY-MM-DD HH:MM):', new Date(Date.now() + 86400000).toISOString().slice(0, 16))
+                          <Button size="sm" variant="outline" onClick={async () => {
+                            const time = await prompt({
+                              title: 'Schedule approval',
+                              message: 'Pick when this message should be sent (in your business timezone).',
+                              defaultValue: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+                              inputType: 'datetime-local',
+                              confirmText: 'Schedule',
+                              required: true,
+                            })
                             if (time) act(a.id, 'schedule', time)
                           }}>
                             <CalIcon className="w-3 h-3" />Schedule

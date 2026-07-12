@@ -1,14 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { signOut, useSession } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 import { useLang } from '@/components/language-toggle'
 import { t } from '@/lib/i18n'
 import { BusinessCardClient } from '@/components/business-card-client'
 import { canConnectChannel } from '@/lib/plan-features'
 import { SUPPORTED_LANGUAGES } from '@/lib/i18n'
+import { useConfirm } from '@/components/confirm-dialog'
 import {
   LayoutDashboard,
   Megaphone,
@@ -34,6 +36,7 @@ import {
   Smartphone,
   Languages,
   ChevronDown,
+  Loader2,
 } from 'lucide-react'
 
 const mainNav = [
@@ -88,8 +91,38 @@ export function Sidebar({
   userEmail?: string | null
 }) {
   const pathname = usePathname()
+  const router = useRouter()
   const { lang } = useLang()
   const tt = (key: string) => t(key, lang)
+  // useSession is the source of truth on the client; NextAuth refreshes the
+  // JWT in the background, so a manual page refresh keeps the user signed in
+  // and our UI stays in sync (e.g. user avatar / name updates).
+  const { status: sessionStatus } = useSession()
+  const { confirm } = useConfirm()
+  const [signingOut, setSigningOut] = useState(false)
+
+  const handleSignOut = async () => {
+    if (signingOut) return
+    const ok = await confirm({
+      title: 'Sign out of MarketMitra?',
+      message: 'You will be signed out of this device. You can sign back in any time.',
+      confirmText: 'Sign out',
+      cancelText: 'Stay',
+    })
+    if (!ok) return
+    setSigningOut(true)
+    try {
+      // signOut() from next-auth/react hits /api/auth/signout, clears the
+      // session cookie, and then we hard-navigate to /login so all server
+      // components re-render fresh (otherwise router.refresh() alone can
+      // briefly show the old page after a cookie wipe).
+      await signOut({ callbackUrl: '/login', redirect: false })
+      window.location.href = '/login'
+    } catch (err) {
+      console.error('[signout] failed', err)
+      setSigningOut(false)
+    }
+  }
 
   // Hide channel links not in plan
   const isAdmin = userEmail && process.env.NEXT_PUBLIC_ADMIN_EMAIL && userEmail === process.env.NEXT_PUBLIC_ADMIN_EMAIL
@@ -230,10 +263,31 @@ export function Sidebar({
         <div className="flex items-center gap-2 px-3 py-2">
           <LanguageToggle />
         </div>
-        <Link href="/login" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-ink-700 hover:bg-ink-50 transition">
-          <LogOut className="w-4 h-4 text-ink-500" />
-          <span>{tt('common.signOut')}</span>
-        </Link>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          disabled={signingOut}
+          data-testid="sidebar-signout"
+          className={cn(
+            'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-ink-700 hover:bg-ink-50 transition text-left',
+            signingOut && 'opacity-60 cursor-not-allowed',
+            sessionStatus === 'unauthenticated' && 'text-ink-400'
+          )}
+          aria-label={tt('common.signOut')}
+        >
+          {signingOut ? (
+            <Loader2 className="w-4 h-4 text-ink-500 animate-spin" />
+          ) : (
+            <LogOut className="w-4 h-4 text-ink-500" />
+          )}
+          <span>
+            {signingOut
+              ? 'Signing out…'
+              : sessionStatus === 'unauthenticated'
+                ? tt('common.signIn')
+                : tt('common.signOut')}
+          </span>
+        </button>
       </div>
     </aside>
   )
